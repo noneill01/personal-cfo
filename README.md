@@ -8,7 +8,7 @@ Personal CFO runs on your own computer and keeps its working financial data in y
 
 ## Project status
 
-Personal CFO is an early public release. The core app is usable today, but some setup and helper tooling is still aimed at technical users. The current public baseline is **v0.1.0**.
+Personal CFO is an early public release. The core app is usable today, but some setup and helper tooling is still aimed at technical users. The current public baseline is **v0.1.1**.
 
 ## Features
 
