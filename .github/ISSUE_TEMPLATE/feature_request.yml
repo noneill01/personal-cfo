@@ -1,0 +1,43 @@
+name: Feature request
+description: Suggest an improvement to Personal CFO
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Personal CFO is local-first and privacy-oriented. Please avoid including real personal financial data in feature requests.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: Describe the user problem before the proposed implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: Suggested approach
+      description: What would a good solution feel like?
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Onboarding
+        - Imports
+        - Dashboard
+        - Plan
+        - Cash Runway
+        - Monthly Review
+        - Health Score
+        - Goals
+        - UK Tax
+        - Backup / restore
+        - Privacy / security
+        - Developer experience
+        - Other
+    validations:
+      required: true

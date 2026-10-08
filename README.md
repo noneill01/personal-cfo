@@ -8,7 +8,7 @@ Personal CFO runs on your own computer and keeps its working financial data in y
 
 ## Project status
 
-Personal CFO is an early public release. The core app is usable today, but some setup and helper tooling is still aimed at technical users. The current public baseline is **v0.1.0**.
+Personal CFO is an early public release. The core app is usable today, but some setup and helper tooling is still aimed at technical users. The current public baseline is **v0.1.1**.
 
 ## Features
 
@@ -62,6 +62,12 @@ pnpm start
 ```
 
 On macOS, `install-background.command` builds the app and installs a user LaunchAgent so it can run without an open Terminal. `restart-background.command` installs a rebuilt version, and `uninstall-background.command` removes automatic startup without deleting browser data.
+
+## Try it without your own data
+
+On a fresh install, choose **Explore with demo data** to load a completely fictional salary, accounts, transactions, recurring commitments, plan and emergency-fund goal. The demo is clearly labelled and can be discarded at any time with **Start with my data**.
+
+This is the quickest way to understand Personal CFO before importing or entering any real financial information.
 
 ## First setup
 
@@ -151,9 +157,13 @@ When working against private development data, additional known private terms ca
 PERSONAL_CFO_PRIVATE_TERMS='term-one|term-two' pnpm release:check
 ```
 
+## Feedback
+
+Bug reports and feature requests are welcome through GitHub Issues. Please use synthetic data only: never attach real statements, backups, tax documents, screenshots containing private information or account details to a public issue.
+
 ## Contributing
 
-Contributions are welcome.
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, privacy and pull-request guidance.
 
 Please:
 

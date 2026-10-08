@@ -36,7 +36,7 @@ import { migrateTaxStore } from "../lib/tax/index.ts";
 import { applyUserProfile, classifyConfiguredIncome, createFreshStore, migrateUserProfile, syncUserProfileInPlace } from "../lib/profile.ts";
 import { addSubcategory, categoryFor, categoryGroupFor, resolveCategory } from "../lib/categories.ts";
 import { hasRole } from "../lib/transaction-roles.ts";
-import { useCategorySelectionSync } from "../lib/category-selection.ts";
+import { createDemoStore } from "../lib/demo.ts"; import { useCategorySelectionSync } from "../lib/category-selection.ts";
 const gbp = new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP", maximumFractionDigits: 0 });
 const gbpExact = new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP", minimumFractionDigits: 2 });
 /**
@@ -1049,6 +1049,7 @@ export default function Home() {
   const emptyFreshView=store.profile?.origin==="fresh"&&!store.balances.some(balance=>balance.asOf)&&!store.transactions.length&&!store.taxDocuments?.length&&!store.taxFacts?.length;
   const setupStep=!store.onboarding||store.onboarding.status==="completed"?setupEditStep:store.onboarding.step;
   const changeSetupStep=(step:import("../lib/types").OnboardingStep)=>{if(!store.onboarding||store.onboarding.status==="completed")setSetupEditStep(step);else setStore(current=>setOnboardingStep(current,step))};
+  const loadDemoProfile=()=>{setStore(createDemoStore());setSetupOpen(false);setSetupDismissed(true);setTab("Overview");setNotice("Fictional demo data loaded. Explore freely, then choose Start with my data when you are ready.");setTimeout(()=>setNotice(""),5200)};const leaveDemoProfile=()=>{setStore(createFreshStore());setTab("Overview");setSetupDismissed(false);setSetupEditStep("welcome");setSetupOpen(true);setNotice("")};
   if(!hydrated&&storageError)return <div className="app-loading" role="alert"><h1>Saved data needs attention</h1><p>{storageError}</p><button onClick={()=>location.reload()}>Try again</button><button onClick={()=>{const raw=localStorage.getItem(INDEXED_DB_MIGRATION_BACKUP_KEY)??discoverLocalFinanceStore(localStorage)?.raw;if(raw){const url=URL.createObjectURL(new Blob([raw],{type:"application/json"}));const a=document.createElement("a");a.href=url;a.download="personal-cfo-recovery.json";a.click();URL.revokeObjectURL(url)}}}>Download saved data</button></div>;
   if(!hydrated)return <div className="app-loading" role="status" aria-live="polite">
 <div className="brand-mark">P</div>
@@ -1080,6 +1081,7 @@ export default function Home() {
 
     <main>
       {storageError&&<div className="import-error" role="alert"><strong>{storageError}</strong><button onClick={exportData}>Download backup</button></div>}
+      {store.demoMode&&<div className="notice" role="status"><span><strong>Fictional demo profile.</strong> None of these accounts, transactions or amounts are real.</span><button className="ghost" onClick={leaveDemoProfile}>Start with my data</button></div>}
       {importBusy&&<div className="import-loading" role="status">Reading your statement…</div>}
       <div className="save-status" role="status">Version {appVersion} · {persistenceMode==="indexeddb"?"IndexedDB protected":persistenceMode==="localstorage"?"Legacy browser storage":"Opening database"} · {savedAt?`Saved at ${new Date(savedAt).toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"})}`:"Saving…"} · {backupStatusLabel}</div>
       <header>
@@ -1097,7 +1099,7 @@ export default function Home() {
 <input ref={backupRef} aria-label="Choose a finance dashboard backup" type="file" accept=".json,application/json" hidden onChange={e=>{const file=e.target.files?.[0];if(file)restoreBackup(file);e.target.value=""}}/>
 </div>
 </header>
-      {showGuide&&<Onboarding store={store} setStore={setStore} step={setupStep} onStep={changeSetupStep} onFinish={()=>{setStore(current=>finishOnboarding(current));setSetupOpen(false);setSetupDismissed(true);setTab("Overview")}} onLeave={()=>{setSetupOpen(false);setSetupDismissed(true)}} onRestore={()=>backupRef.current?.click()} onGeneric={importGenericCsv} onMonzo={importCsv} onBarclaycard={importBarclaycard} onCreateAccount={createImportAccount} importError={importError} notice={notice}/>}
+      {showGuide&&<Onboarding store={store} setStore={setStore} step={setupStep} onStep={changeSetupStep} onFinish={()=>{setStore(current=>finishOnboarding(current));setSetupOpen(false);setSetupDismissed(true);setTab("Overview")}} onLeave={()=>{setSetupOpen(false);setSetupDismissed(true)}} onRestore={()=>backupRef.current?.click()} onDemo={loadDemoProfile} onGeneric={importGenericCsv} onMonzo={importCsv} onBarclaycard={importBarclaycard} onCreateAccount={createImportAccount} importError={importError} notice={notice}/>}
       {!showGuide&&emptyFreshView&&activeSection!=="Settings"&&activeSection!=="Tax"&&<article className="panel empty-state"><h2>No dated financial data yet</h2><p>Add a dated account balance or import a statement to begin. Until then, balances and trends are unavailable—not £0.</p><button className="primary" onClick={()=>setSetupOpen(true)}>Continue setup</button></article>}
       {!showGuide&&<section className={`data-freshness-banner state-${freshnessState}`} aria-label="Dashboard data freshness">
 <div className="freshness-state" aria-hidden="true">{freshnessState==="complete"?"✓":freshnessState==="partial"?"!":"·"}</div>

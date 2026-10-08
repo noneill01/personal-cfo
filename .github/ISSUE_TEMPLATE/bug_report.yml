@@ -1,0 +1,42 @@
+name: Bug report
+description: Report something that is not working as expected
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve Personal CFO. Please do not include real statements, backups, tax documents, account numbers or other private financial data.
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: Describe the problem and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Use synthetic/example data only.
+      placeholder: |
+        1. Open ...
+        2. Add ...
+        3. Click ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Personal CFO version
+      placeholder: e.g. v0.1.1 or the commit SHA
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and OS
+      placeholder: e.g. Chrome 154 on macOS
+  - type: textarea
+    id: extra
+    attributes:
+      label: Extra context
+      description: Screenshots are welcome only when they contain synthetic data.
