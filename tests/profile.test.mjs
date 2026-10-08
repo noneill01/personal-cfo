@@ -23,6 +23,9 @@ const legacyStore = () => ({
   monthlyBudget: 1000, updatedAt: "2026-01-02",
 });
 
+const withoutClassification = item => Object.fromEntries(Object.entries(item).filter(([key]) => !["categoryId", "subcategoryId", "role"].includes(key)));
+const withoutCategoryIdentity = item => Object.fromEntries(Object.entries(item).filter(([key]) => !["categoryId", "subcategoryId"].includes(key)));
+
 test("fresh store and profile contain no personal accounts, goals, providers or payday", () => {
   const store = createFreshStore();
   assert.equal(store.profile.version, USER_PROFILE_VERSION);
@@ -162,7 +165,7 @@ test("version-one backups gain only migration configuration and remain idempoten
   assert.equal(migrated.payday, 19);
   assert.equal(migrated.goals[0].target, 7000);
   assert.equal(migrated.balances[0].name, "From profile");
-  assert.deepEqual(migrated.transactions.map(({categoryId,subcategoryId,role,...item})=>item), old.transactions);
+  assert.deepEqual(migrated.transactions.map(withoutClassification), old.transactions);
   assert.equal(migrated.transactions[0].categoryId,"category:groceries");
   assert.deepEqual(migrateUserProfile(migrated), migrated);
 });
@@ -178,12 +181,12 @@ test("legacy migration is additive, idempotent and preserves calculations and hi
   assert.deepEqual(migrated.profile.goals, [{ id: "ef", name: "Reserve", target: 5000, colour: "green" }]);
   assert.equal(migrated.profile.goals[0].current, undefined);
   assert.deepEqual(migrated.profile.paySchedule, { payday: 21, rules: source.paydayRules });
-  assert.deepEqual(migrated.profile.merchantRules.map(({categoryId,subcategoryId,...item})=>item), source.merchantRules);
+  assert.deepEqual(migrated.profile.merchantRules.map(withoutCategoryIdentity), source.merchantRules);
   assert.equal(migrated.profile.merchantRules[0].categoryId,"category:groceries");
   assert.deepEqual(migrated.profile.customSubcategories, source.customSubcategories);
   for (const field of ["balances", "goals", "snapshots", "imports", "payday", "paydayRules", "customSubcategories"]) assert.deepEqual(migrated[field], before[field], field);
-  assert.deepEqual(migrated.transactions.map(({categoryId,subcategoryId,role,...item})=>item),before.transactions);
-  assert.deepEqual(migrated.merchantRules.map(({categoryId,subcategoryId,...item})=>item),before.merchantRules);
+  assert.deepEqual(migrated.transactions.map(withoutClassification),before.transactions);
+  assert.deepEqual(migrated.merchantRules.map(withoutCategoryIdentity),before.merchantRules);
   assert.deepEqual({ assets: assetBalance(migrated.balances), debt: debtBalance(migrated.balances), cash: cashBalance(migrated.balances), snapshot: createBalanceSnapshot(migrated.balances, "2026-01-02") }, oldTotals);
   assert.deepEqual(source, before);
   assert.equal(migrateUserProfile(migrated), migrated);

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createFreshStore, migrateUserProfile } from "../lib/profile.ts";
-import { categoryFor, makeCategory, resolveCategory, updateCategory, updateSubcategory } from "../lib/categories.ts";
+import { makeCategory, resolveCategory, updateCategory, updateSubcategory } from "../lib/categories.ts";
 import { hasRole, transactionRole } from "../lib/transaction-roles.ts";
 import { isRentalIncome, isSalaryTransaction, payCycleKey } from "../lib/pay-cycles.ts";
 import { isCardRepayment, isExcludedFromSpending, isPayYourselfFirstMovement } from "../lib/transactions.ts";

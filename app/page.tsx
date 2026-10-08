@@ -1,8 +1,8 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import type { Balance, BalanceReconciliation, ClassificationScope, CycleAnnotation, CycleCloseout, DetailKey, DirectDebitFrequency, DirectDebitSetting, MerchantRule, MortgageAccountId, MortgageImportDraft, MortgagePlanner, PayslipDraft, PayslipRecord, PendingClassification, PendingImport, SavingsChallengeTracking, SinkingFund, Snapshot, SpendingTreatment, Store, Tx } from "../lib/types";
-import { categories as taxonomyCategories, classifyWithRules, defaultSubcategories, inferCategory, inferSubcategory, isInternalPotTransfer, isSavingsChallengeTransfer, merchantRuleKey, subcategories } from "../lib/classification";
-import { cycleBounds, cycleLabel, isRentalIncome, isSalaryTransaction, nextMonthKey, ordinalDay, payCycleAnchorDates, payCycleKey, previousMonthKey, shiftIsoDate, transactionCycleKey, type SalaryDateMap } from "../lib/pay-cycles";
+import { categories as taxonomyCategories, classifyWithRules, defaultSubcategories, inferSubcategory, isInternalPotTransfer, isSavingsChallengeTransfer, merchantRuleKey, subcategories } from "../lib/classification";
+import { cycleBounds, cycleLabel, isRentalIncome, isSalaryTransaction, nextMonthKey, ordinalDay, payCycleAnchorDates, payCycleKey, previousMonthKey, shiftIsoDate, transactionCycleKey } from "../lib/pay-cycles";
 import { accountFreshness, baselineEligibleCycles, configuredAccountCoverage, cycleCoverageStatus, isCoveredTransaction, participatesInOverview, requiredBalanceFreshness, transactionAccountId } from "../lib/coverage";
 import { baselineMortgagePlanner, futureValueOfContributions, mortgageProjection } from "../lib/mortgage";
 import { businessExpensePosition, isBusinessExpenseActivity, isCardRepayment, isExcludedFromSpending, isPayYourselfFirstMovement, savingsFundingUsed, savingsMovementBreakdown, spendingTreatmentFor, spendingTreatmentSummary, transactionKey } from "../lib/transactions";
@@ -12,7 +12,7 @@ import { accountKind, assetBalance, debtBalance, isCashAccount, pensionBalance, 
 import { groupPayslipsByMonth, latestPayslipRecord, payrollFallbackEntries, payslipForCycle, salaryIncomeForMonth } from "../lib/payslips";
 import { manualPayslipTaxEvidence, mergeImportedPayslip } from "../lib/tax/payslip-evidence.ts";
 import { taxEmployer } from "../lib/tax/employers.ts";
-import { normaliseDate, parseCsv, parsePayslip } from "../lib/imports";
+import { parsePayslip } from "../lib/imports";
 import { applyImportEffects, barclaycardImporter, genericCsvImporter, monzoImporter, mortgageImporter, mortgageImportEffects, normaliseBarclaycardImport, normaliseGenericCsvImport, normaliseMonzoImport, type NormalisedImportDraft } from "../lib/importers";
 import { commitTransactionImport, previewTransactionImport } from "../lib/import-workflow";
 import type { CsvImportMapping, AccountKind } from "../lib/types";
@@ -188,7 +188,6 @@ export default function Home() {
       if(rawSaved&&(saved.balanceSchemaVersion??0)<2&&!localStorage.getItem(`${LOCAL_STORE_KEY}-before-balances-v2`))localStorage.setItem(`${LOCAL_STORE_KEY}-before-balances-v2`,rawSaved);
       // Do not inject source-code defaults into an established financial record.
       // New accounts are created explicitly through Settings.
-      const missing: Balance[]=[];
       const snapshots = saved.snapshots;
       const budgetNeedsRefresh=(saved.budgetVersion??0)<5;
       const payslips=[...(saved.payslips??[])].sort((a,b)=>b.payDate.localeCompare(a.payDate));
@@ -601,7 +600,7 @@ export default function Home() {
   const lifestyleTotal=lifestylePlan.reduce((sum,item)=>sum+item.amount,0);
   const futurePlan=[{name:"Emergency fund",recommended:recommendedBudgetPlan["Emergency fund"],amount:plannedFor("Emergency fund",sensibleBudgetPlan["Emergency fund"]??0)},{name:"ISA habit",recommended:recommendedBudgetPlan["ISA habit"],amount:plannedFor("ISA habit",sensibleBudgetPlan["ISA habit"]??0)},{name:"Annual-cost sinking funds",recommended:recommendedBudgetPlan["Annual-cost sinking funds"],amount:plannedFor("Annual-cost sinking funds",sensibleBudgetPlan["Annual-cost sinking funds"]??0)}];
   const emergencyContribution=futurePlan[0].amount;
-  const futureTotal=futurePlan.reduce((sum,item)=>sum+item.amount,0);const nextCyclePlanSummary=summarizeNextCyclePlan({planningIncome,essentials:essentialPlan,lifestyle:lifestylePlan,futureTotal});const basePlan=essentialsTotal+lifestyleTotal+futureTotal;const flexibleBuffer=nextCyclePlanSummary.unallocated;const threeMonthFund=essentialsTotal*3;const liquidForEmergency=Math.max(0,totals.netLiquid);const emergencyGap=Math.max(0,threeMonthFund-liquidForEmergency);const emergencyMonths=emergencyContribution>0?Math.ceil(emergencyGap/emergencyContribution):0;
+  const futureTotal=futurePlan.reduce((sum,item)=>sum+item.amount,0);const nextCyclePlanSummary=summarizeNextCyclePlan({planningIncome,essentials:essentialPlan,lifestyle:lifestylePlan,futureTotal});const flexibleBuffer=nextCyclePlanSummary.unallocated;const threeMonthFund=essentialsTotal*3;const liquidForEmergency=Math.max(0,totals.netLiquid);const emergencyGap=Math.max(0,threeMonthFund-liquidForEmergency);const emergencyMonths=emergencyContribution>0?Math.ceil(emergencyGap/emergencyContribution):0;
   const selectedBudgetCycle=budgetCycle==="latest"?latestCycleKey:budgetCycle;
   const selectedCycleCoverage=coverageForCycle(selectedBudgetCycle);
   const selectedBudgetComplete=cycleHasFullCoverage(selectedBudgetCycle);
@@ -794,8 +793,6 @@ export default function Home() {
   const priorReviewCycle=monthly.map(([key])=>key).filter(key=>key<reviewCycleKey&&cycleHasFullCoverage(key)&&!cycleAnnotations[key]?.excludeFromBaseline).at(-1)??"";
   const priorReviewSummary=monthly.find(([key])=>key===priorReviewCycle)?.[1];
   const reviewSpendChange=priorReviewSummary?reviewCycleSummary.spend-priorReviewSummary.spend:0;
-  const latestSnapshot=snapshots.at(-1);
-  const priorSnapshot=snapshots.at(-2);
   const snapshotCashChange=cashChange(snapshots);
   const reviewComparisonLabel=priorReviewSummary?`Compared with ${cycleLabel(priorReviewCycle,payday,salaryDates)}`:"First comparable cycle";
   const reviewSpendSentence=!priorReviewSummary?`${gbp.format(reviewCycleSummary.spend)} of spending is recorded for this cycle.`:reviewSpendChange===0?"Spending was unchanged from the last normal cycle.":`Spending was ${gbp.format(Math.abs(reviewSpendChange))} ${reviewSpendChange>0?"higher":"lower"} than the last normal cycle.`;
@@ -860,10 +857,6 @@ export default function Home() {
   function updateBalance(id: string, value: number) {
     setStore(s => {
       const nextBalances=s.balances.map(b=>b.id===id?{...b,value,asOf:new Date().toISOString().slice(0,10)}:b);
-      const assets=nextBalances.filter(b=>b.group==="asset").reduce((sum,b)=>sum+b.value,0);
-      const debt=nextBalances.filter(b=>b.group==="liability").reduce((sum,b)=>sum+b.value,0);
-      const cash=cashAfterCardDebt(nextBalances);const isa=isaBalance(nextBalances);
-      const pension=pensionBalance(nextBalances);
       const date=new Date().toISOString().slice(0,10);
       const snapshot=createBalanceSnapshot(nextBalances,date);
       return {...s,balances:nextBalances,goals:syncGoalsWithBalances(s.goals,nextBalances),cardStatement:id==="barclaycard-debt"&&s.cardStatement?{...s.cardStatement,balance:value}:s.cardStatement,snapshots:[...(s.snapshots??[]).filter(item=>item.date!==date),snapshot].sort((a,b)=>a.date.localeCompare(b.date)),updatedAt:date};
@@ -875,7 +868,7 @@ export default function Home() {
     const record:BalanceReconciliation={id:`current-account-reconciliation-${reconciledAt}`,reconciledAt,transactionsThrough:legacyCurrentThrough,trackedBalance:legacyCurrentBalance,actualBalance:reconcileActual,difference,reason:reconcileReason};
     setStore(s=>{
       const balances=s.balances.map(balance=>balance.id==="monzo-current"?{...balance,value:reconcileActual,asOf:date}:balance);
-      const assets=assetBalance(balances);const debt=debtBalance(balances);const cash=cashAfterCardDebt(balances);const isa=isaBalance(balances);const pension=pensionBalance(balances);const snapshot=createBalanceSnapshot(balances,date);
+      const snapshot=createBalanceSnapshot(balances,date);
       return {...s,balances,balanceReconciliations:[record,...(s.balanceReconciliations??[])],monzoBalanceTracking:legacyCurrentThrough?{enabled:true,syncedThrough:legacyCurrentThrough,updatedAt:reconciledAt}:s.monzoBalanceTracking,snapshots:[...(s.snapshots??[]).filter(item=>item.date!==date),snapshot].sort((a,b)=>a.date.localeCompare(b.date)),updatedAt:date};
     });
     setReconcileBalance("");setNotice(Math.abs(difference)<.005?"Monzo balance confirmed. The automatic tracker now has a trusted starting point.":`Monzo reconciled by ${difference>=0?"+":"−"}${gbpExact.format(Math.abs(difference))}. The correction is recorded in history.`);setTimeout(()=>setNotice(""),6000)

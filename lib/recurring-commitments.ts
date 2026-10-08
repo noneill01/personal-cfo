@@ -104,7 +104,7 @@ export function paymentMethodFor(transaction: Tx): RecurringCommitment["paymentM
 
 export function detectedDirectDebitDefinitions(transactions: Tx[], through: string): RecurringCommitmentDefinition[] {
   return groupCommitmentTransactions(transactions.filter(row => /direct debit/i.test(row.transactionType ?? "")))
-    .map(group => {
+    .flatMap(group => {
       const byDate = new Map<string, number>();
       for (const row of group.transactions) byDate.set(row.date,(byDate.get(row.date)??0)-row.amount);
       const payments = [...byDate].sort(([a],[b])=>a.localeCompare(b)).map(([date,amount])=>({date,amount}));
@@ -116,11 +116,11 @@ export function detectedDirectDebitDefinitions(transactions: Tx[], through: stri
       const age = through ? (Date.parse(`${through}T12:00:00`)-Date.parse(`${lastDate}T12:00:00`))/86400000 : 999;
       const window = frequency === "weekly" ? 21 : frequency === "quarterly" ? 125 : frequency === "annual" ? 400 : 75;
       const expected = frequency === "weekly" ? scheduledAmount*52/12 : scheduledAmount/(frequency === "quarterly" ? 3 : frequency === "annual" ? 12 : 1);
-      return { id: group.id, key: group.key, label: latest.merchant, category: latest.category,
+      if (age > window) return [];
+      return [{ id: group.id, key: group.key, label: latest.merchant, category: latest.category,
         subcategory: group.subcategory, reference: group.reference, description: group.description,
-        expected, scheduledAmount, frequency, lastDate, source: `${frequency[0].toUpperCase()}${frequency.slice(1)} · Direct Debit`, payments,
-        active: age <= window };
-    }).filter(row=>row.active).map(({active,...row})=>row);
+        expected, scheduledAmount, frequency, lastDate, source: `${frequency[0].toUpperCase()}${frequency.slice(1)} · Direct Debit`, payments }];
+    });
 }
 
 /** Persisted IDs and strong transaction evidence identify obligations; merchant is only a fallback. */
