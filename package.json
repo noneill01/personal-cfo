@@ -39,5 +39,9 @@
     "vinext": "1.0.1",
     "vite": "8.3.2"
   },
-  "type": "module"
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/noneill01/personal-cfo.git"
+  }
 }
