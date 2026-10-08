@@ -163,7 +163,7 @@ Bug reports and feature requests are welcome through GitHub Issues. Please use s
 
 ## Contributing
 
-Contributions are welcome.
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, privacy and pull-request guidance.
 
 Please:
 
