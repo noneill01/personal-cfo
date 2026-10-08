@@ -87,7 +87,7 @@ test("legacy profile projection and legacy card confirmation preserve coverage, 
 });
 test("version-two profile gains coverage roles and account confirmations survive backup",()=>{
   const old=storeFor([account("bank-a","current"),account("card-a","credit-card")],[...fullRows("bank-a"),transaction("card-a",days[0],"card-start")]);
-  old.profile={...old.profile,version:2,accounts:old.profile.accounts.map(({coverage,...account})=>account)};
+  old.profile={...old.profile,version:2,accounts:old.profile.accounts.map(account=>Object.fromEntries(Object.entries(account).filter(([key])=>key!=="coverage")))};
   const migrated=migrateUserProfile(old);
   assert.deepEqual(migrated.profile.accounts.map(item=>item.coverage),["required","required"]);
   assert.deepEqual(migrateUserProfile(migrated),migrated);

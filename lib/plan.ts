@@ -1,4 +1,3 @@
-import { merchantRuleKey } from "./classification.ts";
 import type { DirectDebitFrequency, Tx } from "./types.ts";
 import { inferRecurringFrequency, recurringDatesInRange } from "./recurring.ts";
 import { groupCommitmentTransactions } from "./recurring-commitments.ts";

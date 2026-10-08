@@ -2,7 +2,7 @@ import { normaliseDate, parseBarclaycardFile, parseCsvRows, parseMonzoCsv, parse
 import { inferCategory, inferSubcategory, isSavingsChallengeTransfer } from "./classification.ts";
 import { cardStatementCanUpdate } from "./balances.ts";
 import { baselineMortgagePlanner } from "./mortgage.ts";
-import type { Balance, CardStatementSummary, CsvImportMapping, MortgageAccountId, MortgageImportDraft, MortgagePlanner, MortgageStatementRecord, ParsedCardFile, Store, Tx, UserProfile } from "./types.ts";
+import type { CardStatementSummary, CsvImportMapping, MortgageAccountId, MortgageImportDraft, MortgagePlanner, MortgageStatementRecord, ParsedCardFile, Store, Tx, UserProfile } from "./types.ts";
 
 export type ImportDetection = { id: "monzo" | "barclaycard" | "generic-csv"; confidence: "strong" | "saved" | "manual"; mappingId?: string };
 export type ImportPreview = { transactions: Tx[]; rejected: number; issues: string[]; headers?: string[]; rows?: number; balance?: {value:number;asOf:string} };
