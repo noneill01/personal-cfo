@@ -1,9 +1,8 @@
 import type { Tx } from "../lib/types";
 import { spendingBreakdown } from "../lib/review";
 
-export default function SpendingSummary({ transactions }: { transactions: Tx[] }) {
+export default function SpendingSummary({ transactions, money }: { transactions: Tx[];money:Intl.NumberFormat }) {
   const amounts = spendingBreakdown(transactions);
-  const money = new Intl.NumberFormat("en-GB", {style:"currency",currency:"GBP",maximumFractionDigits:0});
   const rows = [["Recurring payments", amounts.recurring], ["Normal variable spending", amounts.variable], ["Planned one-offs", amounts.planned], ["Unplanned one-offs", amounts.unplanned]] as const;
   return <div className="spending-summary" aria-label="Personal spending breakdown">
     <div className="spending-summary-total"><span>Total personal spending</span><strong>{money.format(amounts.personal)}</strong></div>

@@ -4,13 +4,14 @@ import type { Balance, Store } from "../lib/types";
 import { createBalanceSnapshot } from "../lib/balances";
 import { syncGoalsWithBalances } from "../lib/goals";
 import BalanceHistory from "./BalanceHistory";
+import { regionalFormatters } from "../lib/region";
 
 export default function AccountBalances({store,setStore,updateBalance}: {store:Store;setStore:Dispatch<SetStateAction<Store>>;updateBalance:(id:string,value:number)=>void}) {
   const [name,setName]=useState("");
   const [type,setType]=useState("Cash ISA");
   const [historyOpen,setHistoryOpen]=useState(false);
   const types=["Current account","Cash","Cash ISA","Stocks & Shares ISA","Pension","Property","VCT","Credit card","Mortgage","Loan"];
-  const money=new Intl.NumberFormat("en-GB",{style:"currency",currency:"GBP",minimumFractionDigits:0,maximumFractionDigits:0});
+  const regional=regionalFormatters(store.profile),money=regional.money;
   const assets=store.balances.filter(balance=>balance.group==="asset");
   const liabilities=store.balances.filter(balance=>balance.group==="liability");
   const assetTotal=assets.reduce((sum,balance)=>sum+balance.value,0);
@@ -36,15 +37,15 @@ export default function AccountBalances({store,setStore,updateBalance}: {store:S
     </div>
     <p className="account-guidance"><b>Update the balance directly in each row.</b> Account type and balance date are under Details. Changes also update Home, Goals and today&apos;s net-worth snapshot.</p>
     <button className="history-toggle" aria-expanded={historyOpen} onClick={()=>setHistoryOpen(value=>!value)}><span><b>View balance history</b><small>Track net worth growth and debt reduction over time</small></span><strong>{historyOpen?"Hide history":"Show history"} {historyOpen?"↑":"↓"}</strong></button>
-    {historyOpen&&<BalanceHistory snapshots={store.snapshots??[]} format={money.format}/>} 
+    {historyOpen&&<BalanceHistory snapshots={store.snapshots??[]} format={money.format} locale={regional.region.locale} currency={regional.region.currency}/>}
     <div className="balance-sections">{sections.map(section=>{
       const total=section.items.reduce((sum,balance)=>sum+balance.value,0);
       return <section className={`balance-section ${section.tone}`} key={section.key}>
         <header><div><h3>{section.title}</h3><p>{section.description}</p></div><strong>{money.format(total)}</strong></header>
         <div className="balance-list">{section.items.map(balance=><article className="balance-row" key={balance.id}>
           <i aria-hidden="true"/>
-          <div className="balance-identity"><strong>{balance.name}</strong><span>{balance.type}{balance.asOf?` · ${new Date(balance.asOf+"T12:00:00").toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"})}`:" · Date needed"}</span></div>
-          <label className="balance-value"><span className="sr-only">{balance.group==="liability"?"Amount owed":"Balance"} for {balance.name}</span><b>£</b><input aria-label={`Balance for ${balance.name}`} type="number" step="0.01" min={balance.type==="Current account"?undefined:0} value={balance.value} onChange={event=>{const value=event.target.valueAsNumber;if(Number.isFinite(value))updateBalance(balance.id,value)}}/></label>
+          <div className="balance-identity"><strong>{balance.name}</strong><span>{balance.type}{balance.asOf?` · ${regional.formatDate(balance.asOf,{day:"numeric",month:"short",year:"numeric"})}`:" · Date needed"}</span></div>
+          <label className="balance-value"><span className="sr-only">{balance.group==="liability"?"Amount owed":"Balance"} for {balance.name}</span><b>{regional.currencySymbol}</b><input aria-label={`Balance for ${balance.name}`} type="number" step="0.01" min={balance.type==="Current account"?undefined:0} value={balance.value} onChange={event=>{const value=event.target.valueAsNumber;if(Number.isFinite(value))updateBalance(balance.id,value)}}/></label>
           <details className="balance-details"><summary>Details</summary><div>
             <label><span>Account type</span><select aria-label={`Account type for ${balance.name}`} value={balance.type} onChange={event=>{const next=event.target.value;change(items=>items.map(item=>item.id===balance.id?{...item,type:next}:item))}}>{types.filter(item=>["Credit card","Mortgage","Loan"].includes(item)===(balance.group==="liability")).map(item=><option key={item}>{item}</option>)}{!types.includes(balance.type)&&<option>{balance.type}</option>}</select></label>
             <label><span>Balance as of</span><input aria-label={`Balance date for ${balance.name}`} type="date" value={balance.asOf??""} onChange={event=>change(items=>items.map(item=>item.id===balance.id?{...item,asOf:event.target.value}:item))}/></label>

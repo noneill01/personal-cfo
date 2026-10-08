@@ -51,11 +51,13 @@ export type DetailKey = "health" | "cashflow" | "growth" | "assets" | "debt" | "
 export type OnboardingStep = "welcome" | "accounts" | "import" | "income" | "commitments" | "categories" | "goals" | "review";
 export type OnboardingState = { version: 1; status: "not-started" | "in-progress" | "completed"; step: OnboardingStep };
 export type EmployerAlias = { id: string; displayName: string; aliases: string[] };
+export type RegionalConfig = { country: string; currency: string; locale: string };
 
 /** Configuration only. Financial values and history stay in their existing stores. */
 export type UserProfile = {
   version: number;
   origin: "fresh" | "legacy";
+  region: RegionalConfig;
   /** Optional first-party features; absent only in pre-Phase-8 profiles. */
   enabledPacks?: import("./feature-packs.ts").FeaturePackId[];
   /** Employer identity is user configuration, not a Tax calculation default. */

@@ -7,6 +7,7 @@ import { categoryFor } from "../lib/categories";
 
 export default function Transactions(props: TransactionsScreenProps) {
   const { accountFilter, allBusinessExpenses, applyMerchantClassification, availableSubcategories, breakdownSpend, categories, category, coverage, currentCycleKey, cycleAnnotations, cycleBounds, cycleKeys, cycleLabel, displayedTransactions, filtered, gbp, gbpExact, income, inferSubcategory, isInternalPotTransfer, latestDataCycleKey, maxCategory, maxMonth, monthly, payday, period, periodTransactions, query, salaryDates, selectedBusinessExpenses, selectedPeriodLabel, setAccountFilter, setCategory, setNewSubcategory, setPeriod, setQuery, setSubcategoryDialog, setSubcategoryFilter, setTab, setTxLimit, setTxView, spending, spendingTreatmentFor, store, subcategoryFilter, subcategorySpend, tab, txLimit, txView, uncategorised, updateSpendingTreatment } = props;
+  const locale=gbp.resolvedOptions().locale,currency=gbp.resolvedOptions().currency;
   const accountCoverage=configuredAccountCoverage(store);
   const relevantAccounts=[...accountCoverage.required,...accountCoverage.optional];
   const cycleStart=cycleBounds(currentCycleKey,payday,salaryDates).start;
@@ -24,7 +25,7 @@ export default function Transactions(props: TransactionsScreenProps) {
   const selectedRentalPropertyTotal=periodTransactions.filter(transaction=>transaction.amount<0&&(rentalCategoryConfig?transaction.categoryId===rentalCategoryConfig.id:Boolean(rentalCategory&&transaction.category===rentalCategory))).reduce((sum,transaction)=>sum-transaction.amount,0);
   function exportRentalPropertyCosts(){
     const csvCell=(value:string|number)=>{const raw=String(value);const safe=typeof value==="string"&&/^[=+\-@]/.test(raw)?`'${raw}`:raw;return `"${safe.replace(/"/g,'""')}"`};
-    const header=["Date","Merchant","Account","Category","Subcategory","Amount GBP","Spending treatment","Review note"];
+    const header=["Date","Merchant","Account","Category","Subcategory",`Amount ${currency}`,"Spending treatment","Review note"];
     const rows=rentalPropertyTaxYearCosts.sort((a,b)=>a.date.localeCompare(b.date)).map(transaction=>[transaction.date,transaction.merchant,transaction.account,transaction.category,transaction.subcategory||inferSubcategory(transaction.category,transaction.merchant),Math.abs(transaction.amount).toFixed(2),spendingTreatmentFor(transaction),transaction.subcategory==="Capital improvements — review"?"Review as possible capital expenditure":"Keep evidence and confirm allowable tax treatment"]);
     const blob=new Blob([[header,...rows].map(row=>row.map(csvCell).join(",")).join("\n")],{type:"text/csv;charset=utf-8"});
     const url=URL.createObjectURL(blob);const link=document.createElement("a");link.href=url;link.download=`rental-costs-${taxYearLabel.replace("/","-")}.csv`;link.click();URL.revokeObjectURL(url);
@@ -40,26 +41,26 @@ export default function Transactions(props: TransactionsScreenProps) {
 </div>
 <div className="coverage-badge">
 <span>DATA COVERAGE</span>
-<strong>{store.transactions.length.toLocaleString("en-GB")} records</strong>
-<small>{coverage.from&&coverage.to?`${new Date(coverage.from+"T12:00:00").toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"})} – ${new Date(coverage.to+"T12:00:00").toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"})}`:"No imported history"}</small>
+<strong>{store.transactions.length.toLocaleString(locale)} records</strong>
+<small>{coverage.from&&coverage.to?`${new Date(coverage.from+"T12:00:00").toLocaleDateString(locale,{day:"numeric",month:"short",year:"numeric"})} – ${new Date(coverage.to+"T12:00:00").toLocaleDateString(locale,{day:"numeric",month:"short",year:"numeric"})}`:"No imported history"}</small>
 </div>
 </div>
           <div className="source-strip">
 {relevantAccounts.map(account=><div key={account.accountId}>
 <i className={`source-dot ${account.kind==="credit-card"?"card":"monzo"}`}/>
 <span>{account.name}</span>
-<strong>{account.count.toLocaleString("en-GB")}</strong>
+<strong>{account.count.toLocaleString(locale)}</strong>
 </div>)}
 <div>
 <i className="source-dot manual"/>
 <span>Manual</span>
-<strong>{(coverage.accounts.Manual??0).toLocaleString("en-GB")}</strong>
+<strong>{(coverage.accounts.Manual??0).toLocaleString(locale)}</strong>
 </div>
 <button onClick={()=>setTab("Update")}>Import newer data →</button>
 </div>
           {missingCoverage.length>0&&<div className="data-gap">
 <b>Data check</b>
-<span>{missingCoverage.map(account=>`${account.name}: ${account.to?`activity through ${new Date(account.to+"T12:00:00").toLocaleDateString("en-GB",{day:"numeric",month:"long"})}`:"no transactions loaded"}${account.gaps.length?"; check the gap in imported dates":""}`).join(" · ")}. Import or review the missing account activity to make this cycle complete.</span>
+<span>{missingCoverage.map(account=>`${account.name}: ${account.to?`activity through ${new Date(account.to+"T12:00:00").toLocaleDateString(locale,{day:"numeric",month:"long"})}`:"no transactions loaded"}${account.gaps.length?"; check the gap in imported dates":""}`).join(" · ")}. Import or review the missing account activity to make this cycle complete.</span>
 </div>}
           <div className="transaction-controls">
 <div className="view-switch" role="group" aria-label="Transaction view">{(["Spending","Savings","Work expenses","All activity","Income"] as const).map(view=>
@@ -166,7 +167,7 @@ export default function Transactions(props: TransactionsScreenProps) {
 <span className="legend">
 <i className="income-dot"/>Salary <i className="savings-dot"/>Savings used <i className="spend-dot"/>Spend</span>
 </div>
-<div className="mini-cycle-chart" role="group" aria-label="Choose a salary cycle">{monthly.map(([key,value])=>{const bounds=cycleBounds(key,payday,salaryDates);const startLabel=new Date(bounds.start+"T12:00:00").toLocaleDateString("en-GB",{day:"numeric",month:"short"});const live=key===currentCycleKey;const annotation=cycleAnnotations[key];const incomeHeight=value.salaryIncome?Math.max(value.salaryIncome/maxMonth*120,2):0;const savingsHeight=value.savingsUsed?Math.max(value.savingsUsed/maxMonth*120,2):0;return <button className={`${period===`cycle:${key}`?"selected ":""}${live?"live-cycle ":""}${annotation&&annotation.kind!=="Normal"?"annotated-cycle":""}`} aria-label={`${key}: salary paid ${gbp.format(value.salaryIncome)}, savings used ${gbp.format(value.savingsUsed)}, spending ${gbp.format(value.spend)}${annotation?`, ${annotation.kind}`:""}`} title={`${key} payroll · Salary ${gbp.format(value.salaryIncome)} · ${cycleLabel(key,payday,salaryDates)} spending ${gbp.format(value.spend)} · Savings used ${gbp.format(value.savingsUsed)}${annotation?` · ${annotation.title||annotation.kind}`:""}`} key={key} onClick={()=>{setPeriod(`cycle:${key}`);setTxLimit(30)}}>
+<div className="mini-cycle-chart" role="group" aria-label="Choose a salary cycle">{monthly.map(([key,value])=>{const bounds=cycleBounds(key,payday,salaryDates);const startLabel=new Date(bounds.start+"T12:00:00").toLocaleDateString(locale,{day:"numeric",month:"short"});const live=key===currentCycleKey;const annotation=cycleAnnotations[key];const incomeHeight=value.salaryIncome?Math.max(value.salaryIncome/maxMonth*120,2):0;const savingsHeight=value.savingsUsed?Math.max(value.savingsUsed/maxMonth*120,2):0;return <button className={`${period===`cycle:${key}`?"selected ":""}${live?"live-cycle ":""}${annotation&&annotation.kind!=="Normal"?"annotated-cycle":""}`} aria-label={`${key}: salary paid ${gbp.format(value.salaryIncome)}, savings used ${gbp.format(value.savingsUsed)}, spending ${gbp.format(value.spend)}${annotation?`, ${annotation.kind}`:""}`} title={`${key} payroll · Salary ${gbp.format(value.salaryIncome)} · ${cycleLabel(key,payday,salaryDates)} spending ${gbp.format(value.spend)} · Savings used ${gbp.format(value.savingsUsed)}${annotation?` · ${annotation.title||annotation.kind}`:""}`} key={key} onClick={()=>{setPeriod(`cycle:${key}`);setTxLimit(30)}}>
 <span>{startLabel}</span>
 <div>
 <span className={`funding-stack ${value.savingsUsed?"with-savings":""}`} aria-hidden="true">
@@ -184,12 +185,12 @@ export default function Transactions(props: TransactionsScreenProps) {
 <div className="activity-title">
 <div>
 <h3>{txView}</h3>
-<p>Showing {Math.min(txLimit,filtered.length)} of {filtered.length.toLocaleString("en-GB")} matching · {periodTransactions.length.toLocaleString("en-GB")} records in period</p>
+<p>Showing {Math.min(txLimit,filtered.length)} of {filtered.length.toLocaleString(locale)} matching · {periodTransactions.length.toLocaleString(locale)} records in period</p>
 </div>
 <span>Every edit asks: one-off, going forward, or all history</span>
 </div>
 <div className="activity-list">{displayedTransactions.map((t,i)=>{const previous=displayedTransactions[i-1];const showDate=!previous||previous.date!==t.date;const catClass=t.category.toLowerCase().replace(/[^a-z]+/g,"-");const txSubcategory=t.subcategory||inferSubcategory(t.category,t.merchant);const lockedTransfer=isInternalPotTransfer(t);const treatment=spendingTreatmentFor(t);return <div key={t.id}>{showDate&&<div className="date-divider">
-<span>{new Date(t.date+"T12:00:00").toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"long"})}</span>
+<span>{new Date(t.date+"T12:00:00").toLocaleDateString(locale,{weekday:"short",day:"numeric",month:"long"})}</span>
 <i/>
 </div>}<div className="activity-row">
 <div className={`category-icon cat-${catClass}`}>{t.category.slice(0,1)}</div>

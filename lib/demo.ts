@@ -1,6 +1,7 @@
 import { addOnboardingAccount, addOnboardingGoal, configureIncome, finishOnboarding } from "./onboarding.ts";
 import { createFreshStore, syncUserProfileInPlace } from "./profile.ts";
-import type { RecurringCommitment, Store, Tx } from "./types.ts";
+import { normaliseRegion } from "./region.ts";
+import type { RecurringCommitment, RegionalConfig, Store, Tx } from "./types.ts";
 
 const iso = (date: Date) => date.toISOString().slice(0, 10);
 const addDays = (date: Date, days: number) => {
@@ -41,12 +42,15 @@ function transaction(
  * A fictional, self-contained profile for evaluating Personal CFO before entering
  * real financial data. It is generated locally and contains no owner data.
  */
-export function createDemoStore(now = new Date()): Store {
+export function createDemoStore(regionOrNow?: Partial<RegionalConfig> | Date, date = new Date()): Store {
+  const region=regionOrNow instanceof Date ? undefined : regionOrNow;
+  const now=regionOrNow instanceof Date ? regionOrNow : date;
   const today = iso(now);
   const anchor = currentPaydayAnchor(now);
   const anchors = [-2, -1, 0].map(offset => monthAnchor(anchor, offset));
 
   let store = createFreshStore();
+  if (store.profile) store = { ...store, profile: { ...store.profile, region: normaliseRegion(region) } };
   store = addOnboardingAccount(store, { id: "demo-current", name: "Everyday account", kind: "current", balance: 3250, asOf: today, coverage: "required" });
   store = addOnboardingAccount(store, { id: "demo-savings", name: "Rainy day savings", kind: "savings", balance: 8200, asOf: today, coverage: "excluded" });
   store = addOnboardingAccount(store, { id: "demo-card", name: "Rewards card", kind: "credit-card", balance: 480, asOf: today, coverage: "required" });
