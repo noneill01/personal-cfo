@@ -6,7 +6,7 @@ import { createDemoStore } from "../lib/demo.ts";
 import { parseGenericCsv } from "../lib/importers.ts";
 import { statementMoney } from "../lib/imports.ts";
 import { createFreshStore, migrateUserProfile, USER_PROFILE_VERSION } from "../lib/profile.ts";
-import { DEFAULT_REGION, defaultCsvDateFormat, formatDate, formatMoney, normaliseRegion, regionalFormatters } from "../lib/region.ts";
+import { DEFAULT_REGION, defaultCsvDateFormat, formatDate, formatMoney, isValidCurrency, moneyFormatter, normaliseRegion, regionalFormatters } from "../lib/region.ts";
 
 const mapping={version:1,id:"region-map",name:"Region CSV",accountId:"account-main",dateColumn:"Date",descriptionColumn:"Payee",amountMode:"single",amountColumn:"Amount",spendingSign:"negative"};
 
@@ -31,6 +31,16 @@ test("GBP, USD and EUR profiles format money and dates from one regional module"
   assert.match(formatMoney(1234.56,ie,true),/€1,234\.56/);
   assert.equal(formatDate("2026-10-08",gb),"08/10/2026");
   assert.equal(formatDate("2026-10-08",us),"10/8/2026");
+});
+
+test("custom currency validation rejects unknown codes and exact money uses ISO minor units",()=>{
+  assert.equal(isValidCurrency("ZZZ"),false);
+  assert.equal(isValidCurrency("JPY"),true);
+  const jpy=normaliseRegion({country:"JP",currency:"JPY",locale:"ja-JP"});
+  const options=moneyFormatter(jpy,true).resolvedOptions();
+  assert.equal(options.minimumFractionDigits,0);
+  assert.equal(options.maximumFractionDigits,0);
+  assert.doesNotMatch(formatMoney(1234.56,jpy,true),/[.,]56/);
 });
 
 test("regional settings survive backup round-trip",()=>{

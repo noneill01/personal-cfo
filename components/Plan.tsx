@@ -442,7 +442,7 @@ export default function Plan(props: PlanScreenProps) {
         <article className="panel every-pound-allocation">
 <div className="panel-head">
 <div>
-<span className="insight-label">EVERY POUND HAS A JOB</span>
+<span className="insight-label">EVERY PART OF YOUR INCOME HAS A JOB</span>
 <h3>Pay yourself before flexible spending.</h3>
 <p>This reconciles the selected cycle&apos;s income across must-pay costs, savings and investments, flexible costs, and money that is still unallocated.</p>
 </div>

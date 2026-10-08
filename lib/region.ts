@@ -11,6 +11,8 @@ export const REGION_PRESETS = [
   { id: "NZ", label: "New Zealand", country: "NZ", currency: "NZD", locale: "en-NZ" },
 ] as const;
 
+const FALLBACK_ISO_4217_CODES = new Set("AED AFN ALL AMD ANG AOA ARS AUD AWG AZN BAM BBD BDT BGN BHD BIF BMD BND BOB BOV BRL BSD BTN BWP BYN BZD CAD CDF CHE CHF CHW CLF CLP CNY COP COU CRC CUP CVE CZK DJF DKK DOP DZD EGP ERN ETB EUR FJD FKP GBP GEL GHS GIP GMD GNF GTQ GYD HKD HNL HTG HUF IDR ILS INR IQD IRR ISK JMD JOD JPY KES KGS KHR KMF KPW KRW KWD KYD KZT LAK LBP LKR LRD LSL LYD MAD MDL MGA MKD MMK MNT MOP MRU MUR MVR MWK MXN MXV MYR MZN NAD NGN NIO NOK NPR NZD OMR PAB PEN PGK PHP PKR PLN PYG QAR RON RSD RUB RWF SAR SBD SCR SDG SEK SGD SHP SLE SOS SRD SSP STN SVC SYP SZL THB TJS TMT TND TOP TRY TTD TWD TZS UAH UGX USD USN UYI UYU UYW UZS VED VES VND VUV WST XAF XAG XAU XBA XBB XBC XBD XCD XCG XDR XOF XPD XPF XPT XSU XTS XUA XXX YER ZAR ZMW ZWG".split(" "));
+
 export function isValidLocale(locale: string) {
   try { return Intl.getCanonicalLocales(locale.trim()).length === 1; } catch { return false; }
 }
@@ -18,7 +20,9 @@ export function isValidLocale(locale: string) {
 export function isValidCurrency(currency: string) {
   const code=currency.trim().toUpperCase();
   if (!/^[A-Z]{3}$/.test(code)) return false;
-  try { new Intl.NumberFormat("en", { style: "currency", currency: code }).format(0); return true; } catch { return false; }
+  const supportedValuesOf=(Intl as typeof Intl & {supportedValuesOf?:(key:"currency")=>string[]}).supportedValuesOf;
+  if (supportedValuesOf) return supportedValuesOf.call(Intl,"currency").includes(code);
+  return FALLBACK_ISO_4217_CODES.has(code);
 }
 
 export function normaliseRegion(value?: Partial<RegionalConfig>): RegionalConfig {
@@ -35,7 +39,7 @@ export function normaliseRegion(value?: Partial<RegionalConfig>): RegionalConfig
 export const regionFor=(profile?:Pick<UserProfile,"region">)=>normaliseRegion(profile?.region);
 
 export function moneyFormatter(region:RegionalConfig,exact=false) {
-  return new Intl.NumberFormat(region.locale,{style:"currency",currency:region.currency,...(exact?{minimumFractionDigits:2,maximumFractionDigits:2}:{maximumFractionDigits:0})});
+  return new Intl.NumberFormat(region.locale,{style:"currency",currency:region.currency,...(exact?{}:{maximumFractionDigits:0})});
 }
 
 export const formatMoney=(value:number,region:RegionalConfig,exact=false)=>moneyFormatter(region,exact).format(value);
