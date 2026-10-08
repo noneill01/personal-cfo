@@ -2,6 +2,8 @@
 
 Personal CFO is a private, local-first personal finance operating system. It runs as a web app on your own computer and stores its working data in that browser profile. No account, hosted database or cloud service is required.
 
+Personal CFO is a personal tracking and planning tool. It is not financial, investment, tax or legal advice.
+
 ## What it does
 
 - Configurable current, savings, credit-card, mortgage, loan, investment, pension and property accounts
@@ -19,7 +21,7 @@ Personal CFO does not provide bank API syncing, Open Banking, cloud sync, multi-
 
 ## Privacy model
 
-Financial records are stored in IndexedDB for the exact browser origin used to open the app. The app does not upload those records. When the canonical database is empty, a compatible older local database or local-storage record can be discovered by its schema and copied without embedding a private historical identifier in source.
+Financial records are stored locally in IndexedDB for the browser origin used to open the app. Personal CFO does not upload those records to a hosted Personal CFO service.
 
 Important boundaries:
 
@@ -40,8 +42,8 @@ The web app itself is standards-based, but the supplied one-click background ser
 ## Install
 
 ```bash
-git clone <repository-url>
-cd Finance-Webapp
+git clone https://github.com/noneill01/personal-cfo.git
+cd personal-cfo
 pnpm install
 ```
 
@@ -110,15 +112,16 @@ pnpm run typecheck
 pnpm run test:logic
 pnpm build
 pnpm audit --prod
+pnpm release:check
 ```
 
-The release gate additionally scans tracked source and built static assets:
+The release gate scans tracked source and built static assets for private-capable data, credential patterns, prohibited files and other release risks.
+
+When working against private development data, additional known private terms can be supplied locally without committing them:
 
 ```bash
 PERSONAL_CFO_PRIVATE_TERMS='term-one|term-two' pnpm release:check
 ```
-
-Supply the owner's known names, properties and distinctive private terms locally. Do not commit that list. The check deliberately refuses to certify a dirty tree or a build containing source maps, private-capable data assets, credential patterns or configured private terms.
 
 ## Contributing
 
@@ -134,12 +137,8 @@ Supply the owner's known names, properties and distinctive private terms locally
 - Backups are manual unless the browser grants access to an automatic-backup directory.
 - PDF parsing depends on statement layout and can require manual entry when an issuer changes its format.
 - Native import support is intentionally limited; other institutions should use Generic CSV.
-- No software licence has been selected yet. Do not assume permission to redistribute until the repository owner chooses one.
+- The supplied background-service and PDF fallback tooling is currently macOS-oriented.
 
-## Legacy recovery boundary
+## Licence
 
-Current Personal CFO profiles are self-contained, and generic historical schema migrations remain supported. Pre-genericisation backups that depended on one owner's embedded employers, properties, categories or financial assumptions are intentionally not supported by distributable source. Those ancient private backups remain recoverable only with the private historical repository at the `pre-public-sanitisation` tag. Personal CFO has no hidden local profile module or permanent private compatibility dependency.
-
-## Preparing a public repository
-
-Do not publish the development repository's historical Git objects. Create a sanitized tracked-source snapshot, verify it with the release gate, and use that snapshot as the first commit of a new repository with fresh history.
+Personal CFO is released under the [MIT License](LICENSE).
