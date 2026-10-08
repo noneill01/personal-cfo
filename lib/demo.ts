@@ -66,12 +66,15 @@ export function createDemoStore(now = new Date()): Store {
       transaction(`demo-entertainment-${suffix}`, addDays(salaryDate, 19), "Example Cinema", -28, "Entertainment"),
       transaction(`demo-savings-${suffix}`, addDays(salaryDate, 20), "Savings transfer", -500, "Savings", "Cash savings", { role: "savings-contribution", spendingTreatment: "Transfer / savings" }),
     ];
-  });
+  }).filter(row => row.date <= today);
+
+  const latestDateFor = (merchant: string) =>
+    [...transactions].reverse().find(row => row.merchant === merchant)?.date ?? today;
 
   const commitments: RecurringCommitment[] = [
-    { id: "demo-rent", key: "oak-street-lettings", label: "Oak Street Lettings", category: "Housing", subcategory: "Rent", scheduledAmount: 1250, frequency: "monthly", lastDate: iso(addDays(anchors.at(-1)!, 2)), paymentMethod: "standing-order", status: "confirmed", source: "Demo data" },
-    { id: "demo-energy", key: "example-energy", label: "Example Energy", category: "Bills", subcategory: "Utilities", scheduledAmount: 118, frequency: "monthly", lastDate: iso(addDays(anchors.at(-1)!, 5)), paymentMethod: "direct-debit", status: "confirmed", source: "Demo data" },
-    { id: "demo-broadband", key: "example-broadband", label: "Example Broadband", category: "Bills", subcategory: "Subscriptions", scheduledAmount: 39, frequency: "monthly", lastDate: iso(addDays(anchors.at(-1)!, 7)), paymentMethod: "direct-debit", status: "confirmed", source: "Demo data" },
+    { id: "demo-rent", key: "oak-street-lettings", label: "Oak Street Lettings", category: "Housing", subcategory: "Rent", scheduledAmount: 1250, frequency: "monthly", lastDate: latestDateFor("Oak Street Lettings"), paymentMethod: "standing-order", status: "confirmed", source: "Demo data" },
+    { id: "demo-energy", key: "example-energy", label: "Example Energy", category: "Bills", subcategory: "Utilities", scheduledAmount: 118, frequency: "monthly", lastDate: latestDateFor("Example Energy"), paymentMethod: "direct-debit", status: "confirmed", source: "Demo data" },
+    { id: "demo-broadband", key: "example-broadband", label: "Example Broadband", category: "Bills", subcategory: "Subscriptions", scheduledAmount: 39, frequency: "monthly", lastDate: latestDateFor("Example Broadband"), paymentMethod: "direct-debit", status: "confirmed", source: "Demo data" },
   ];
 
   const budgetPlan = {
@@ -98,7 +101,7 @@ export function createDemoStore(now = new Date()): Store {
     snapshots: [
       { date: iso(monthAnchor(anchor, -2, 27)), netWorth: 38300, cash: 10100, pension: 28600, debt: 400 },
       { date: iso(monthAnchor(anchor, -1, 27)), netWorth: 40500, cash: 10800, pension: 30100, debt: 400 },
-      { date: today, netWorth: 42970, cash: 11450, pension: 32000, debt: 480 },
+      { date: today, netWorth: 42970, cash: 10970, pension: 32000, debt: 480 },
     ],
     updatedAt: today,
   };
