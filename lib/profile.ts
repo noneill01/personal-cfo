@@ -3,8 +3,9 @@ import { categoryFor, freshCategories, legacyCategoryGroup, makeCategory, resolv
 import { legacyTransactionRole } from "./transaction-roles.ts";
 import { baselineMortgagePlanner } from "./mortgage.ts";
 import type { Store, Tx, UserProfile } from "./types.ts";
+import { DEFAULT_REGION, normaliseRegion } from "./region.ts";
 
-export const USER_PROFILE_VERSION = 6;
+export const USER_PROFILE_VERSION = 7;
 export const defaultAccountCoverage = (kind: UserProfile["accounts"][number]["kind"]) => kind === "current" || kind === "credit-card" ? "required" as const : "excluded" as const;
 
 // Profile owns identity, classification and planning configuration. The old
@@ -62,6 +63,7 @@ export function profileFromStore(store: Store, origin: UserProfile["origin"]): U
   return {
     version: USER_PROFILE_VERSION,
     origin,
+    region: { ...DEFAULT_REGION },
     enabledPacks: origin === "legacy" ? ["uk-tax"] : [],
     accounts: store.balances.map(({ id, name, type }) => { const kind=accountKind({ type }); return { id, name, kind, coverage:defaultAccountCoverage(kind) }; }),
     goals: store.goals.map(({ id, name, target, colour }) => ({ id, name, target, colour })),
@@ -75,11 +77,12 @@ export function profileFromStore(store: Store, origin: UserProfile["origin"]): U
 
 /** Additively migrate previous profiles without changing historical labels or amounts. */
 export function migrateUserProfile(store: Store, origin: UserProfile["origin"] = "legacy"): Store {
-  if (store.profile && store.profile.version >= USER_PROFILE_VERSION && store.profile.categories) return store;
+  if (store.profile && store.profile.version >= USER_PROFILE_VERSION && store.profile.categories && store.profile.region) return store;
   const existing = store.profile;
   const baseline = profileFromStore(store, existing?.origin ?? origin);
   const profile: UserProfile = existing ? {
     ...baseline, ...existing, version: USER_PROFILE_VERSION,
+    region: normaliseRegion(existing.region),
     // Every pre-Phase-8 installation had Tax available, including profiles
     // first created by Phase 7 onboarding. Preserve that capability on upgrade.
     enabledPacks: existing.enabledPacks ?? ["uk-tax"],

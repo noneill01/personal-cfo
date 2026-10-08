@@ -5,7 +5,7 @@ import type { Snapshot } from "../lib/types";
 
 type MetricKey = "totalWealth" | "netWorth" | "debt";
 
-export default function BalanceHistory({snapshots, format}: {snapshots: Snapshot[]; format: (value: number) => string}) {
+export default function BalanceHistory({snapshots, format, locale, currency}: {snapshots: Snapshot[]; format: (value: number) => string;locale:string;currency:string}) {
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const ordered = [...snapshots].sort((a, b) => a.date.localeCompare(b.date));
 
@@ -26,8 +26,8 @@ export default function BalanceHistory({snapshots, format}: {snapshots: Snapshot
     {key: "debt" as const, label: "Total debt", colour: "#ef5b67"},
   ];
   const change = (key: MetricKey) => ordered.length > 1 ? metricValue(ordered.at(-1)!, key) - metricValue(ordered[0], key) : 0;
-  const fullDate = (date: string) => new Date(date + "T12:00:00").toLocaleDateString("en-GB", {day: "numeric", month: "long", year: "numeric"});
-  const dateLabel = (date: string) => new Date(date + "T12:00:00").toLocaleDateString("en-GB", {month: "short", year: "2-digit"});
+  const fullDate = (date: string) => new Date(date + "T12:00:00").toLocaleDateString(locale, {day: "numeric", month: "long", year: "numeric"});
+  const dateLabel = (date: string) => new Date(date + "T12:00:00").toLocaleDateString(locale, {month: "short", year: "2-digit"});
   const activeSnapshot = hoveredIndex === null ? null : ordered[hoveredIndex];
   const tooltipX = activeSnapshot && x(hoveredIndex!) > width - 270 ? x(hoveredIndex!) - 244 : x(hoveredIndex!) + 16;
   const tooltipY = pad.top + 16;
@@ -35,11 +35,11 @@ export default function BalanceHistory({snapshots, format}: {snapshots: Snapshot
   return <section className="balance-history" aria-labelledby="balance-history-title">
     <div className="balance-history-head"><div><span className="insight-label">PROGRESS OVER TIME</span><h3 id="balance-history-title">Wealth and debt history</h3><p>Total wealth is every asset (property, pensions, savings and investments). Net worth subtracts debt. Only saved balance snapshots appear here.</p></div><div className="balance-history-period"><strong>{ordered.length}</strong><span>snapshot{ordered.length === 1 ? "" : "s"}</span></div></div>
     <div className="balance-history-legend" aria-label={activeSnapshot ? `Balances on ${fullDate(activeSnapshot.date)}` : "Change since the first saved snapshot"}>{lines.map(line => <span key={line.key}><i style={{background: line.colour}} />{line.label}<b>{activeSnapshot ? format(metricValue(activeSnapshot, line.key)) : `${change(line.key) >= 0 ? "+" : "−"}${format(Math.abs(change(line.key)))}`}</b></span>)}</div>
-    <div className="balance-chart-meta"><strong>Amount (£)</strong><span>Vertical scale: {format(min)} to {format(max)}</span><small>{activeSnapshot ? `Showing: ${fullDate(activeSnapshot.date)}` : "Hover or tab through a date to inspect it"}</small></div>
+    <div className="balance-chart-meta"><strong>Amount ({currency})</strong><span>Vertical scale: {format(min)} to {format(max)}</span><small>{activeSnapshot ? `Showing: ${fullDate(activeSnapshot.date)}` : "Hover or tab through a date to inspect it"}</small></div>
     <div className="balance-chart-wrap">
       <svg className="balance-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Interactive balance history from ${ordered[0].date} to ${ordered.at(-1)!.date}. Hover or tab through dates for exact values.`} onPointerLeave={() => setHoveredIndex(null)}>
         {[0, .25, .5, .75, 1].map(ratio => <g key={ratio}><line x1={pad.left} x2={width - pad.right} y1={pad.top + ratio * (height - pad.top - pad.bottom)} y2={pad.top + ratio * (height - pad.top - pad.bottom)} className="balance-chart-grid" /><text x={pad.left - 12} y={pad.top + ratio * (height - pad.top - pad.bottom) + 5} textAnchor="end" className="balance-chart-axis">{format(max - (max - min) * ratio)}</text></g>)}
-        <text x={16} y={height / 2} textAnchor="middle" className="balance-chart-axis-title" transform={`rotate(-90 16 ${height / 2})`}>Amount (£)</text>
+        <text x={16} y={height / 2} textAnchor="middle" className="balance-chart-axis-title" transform={`rotate(-90 16 ${height / 2})`}>Amount ({currency})</text>
         {lines.map(line => <polyline key={line.key} points={points(line.key)} fill="none" stroke={line.colour} strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />)}
         {ordered.map((snapshot, index) => {
           const start = index === 0 ? pad.left : (x(index - 1) + x(index)) / 2;

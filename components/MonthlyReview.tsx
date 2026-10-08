@@ -7,6 +7,7 @@ import { categoryFor } from "../lib/categories";
 
 export default function MonthlyReview(props: MonthlyReviewProps) {
   const { reviewChecks, reviewChanged, reviewPayslip, reviewCycleTransactions, backupStatusLabel, closeReviewCycle, confirmCardCoverageThrough, currentCycleDataState, currentCycleKey, cycleHasFullCoverage, cycleLabel, formatCoverageDate, gbp, payday, payslipRef, priorReviewSummary, reconciliationAligned, reopenReviewCycle, reviewActionCopy, reviewActionTitle, reviewCloseout, reviewCloseoutNote, reviewComparisonLabel, reviewCycleAnnotation, reviewCycleComplete, reviewCycleCoverage, reviewCycleKey, reviewCycleOptions, reviewCycleSelection, reviewCycleSummary, reviewMonthlyNarrative, reviewNeedsReview, reviewSaved, reviewSpendChange, salaryDates, setBudgetCycle, setCategory, setCloseoutNotes, setPeriod, setReviewCycleSelection, setSubcategoryFilter, setTab, setTxView, store, tab, updateCycleAnnotation } = props;
+  const locale=gbp.resolvedOptions().locale;
   const outstandingChecks=reviewChecks.missing.length;
   const reviewCategory=categoryFor(store.profile,"Other")?.name??"Other";
   const reviewSubcategory=categoryFor(store.profile,"Other")?.subcategories.find(item=>item.id==="category:other/subcategory:needs-review")?.name??"Needs review";
@@ -57,7 +58,7 @@ export default function MonthlyReview(props: MonthlyReviewProps) {
 <div><span>{reviewSaved<0?"Savings used":"Saved & invested"}</span><strong>{reviewSaved===0?"Not recorded":gbp.format(Math.abs(reviewSaved))}</strong><small>{reviewSaved<0?"Drawn back into cash":"Pay-yourself-first movements"}</small></div>
 <div><span>Cash-flow result</span><strong className={reviewCycleSummary.income-reviewCycleSummary.spend>=0?"positive":"negative"}>{gbp.format(reviewCycleSummary.income-reviewCycleSummary.spend)}</strong><small>Before interpreting internal transfers</small></div>
 </div>
-<SpendingSummary transactions={reviewCycleTransactions}/>
+<SpendingSummary transactions={reviewCycleTransactions} money={gbp}/>
 <div className="review-narrative">
 <div><span>WHAT CHANGED</span><strong>{reviewComparisonLabel}</strong><p>{reviewMonthlyNarrative}</p></div>
 <div><span>NEXT ACTION</span><strong>{reviewActionTitle}</strong><p>{reviewActionCopy}</p></div>
@@ -68,7 +69,7 @@ export default function MonthlyReview(props: MonthlyReviewProps) {
 <div className="review-closeout-copy">
 <span className="insight-label">FINAL STEP</span>
 <h3>{reviewCloseout?"This cycle is closed.":canClose?"Ready to close this cycle.":"One final check remains."}</h3>
-<p>{reviewCloseout?`Saved ${new Date(reviewCloseout.closedAt).toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"})}. The saved closeout is retained. Figures above reflect the latest transactions; changes are highlighted for review.`:canClose?"Closing saves the cycle result, a dated net-worth snapshot and a downloadable safety backup. Your imported transactions remain available in full.":reviewCycleCoverage.monzoComplete&&reviewCycleCoverage.cardHistoryStarted&&!reviewCycleCoverage.cardComplete?"Your current-account activity is complete; confirm that you reviewed the latest credit-card activity through the cycle end.":"Resolve the outstanding checks listed above before closing the cycle."}</p>
+<p>{reviewCloseout?`Saved ${new Date(reviewCloseout.closedAt).toLocaleDateString(locale,{day:"numeric",month:"short",year:"numeric"})}. The saved closeout is retained. Figures above reflect the latest transactions; changes are highlighted for review.`:canClose?"Closing saves the cycle result, a dated net-worth snapshot and a downloadable safety backup. Your imported transactions remain available in full.":reviewCycleCoverage.monzoComplete&&reviewCycleCoverage.cardHistoryStarted&&!reviewCycleCoverage.cardComplete?"Your current-account activity is complete; confirm that you reviewed the latest credit-card activity through the cycle end.":"Resolve the outstanding checks listed above before closing the cycle."}</p>
 <small className="closeout-backup-status">{backupStatusLabel}</small>
 </div>
 {reviewCycleCoverage.monzoComplete&&reviewCycleCoverage.cardHistoryStarted&&!reviewCycleCoverage.cardComplete?<button className="ghost" onClick={()=>confirmCardCoverageThrough(reviewCycleKey)}>Confirm card reviewed through {formatCoverageDate(reviewCycleCoverage.bounds.end)}</button>:canClose?<div className="review-closeout-action"><label><span>Optional note for this cycle</span><input aria-label="Monthly review closeout note" value={reviewCloseoutNote} onChange={event=>setCloseoutNotes(notes=>({...notes,[reviewCycleKey]:event.target.value}))} placeholder="What should you remember next cycle?"/></label><button className="primary" onClick={closeReviewCycle}>{reviewCloseout?"Update closeout & download backup":"Close cycle & download backup"}</button>{reviewCloseout&&<button className="ghost" onClick={reopenReviewCycle}>Reopen this cycle</button>}</div>:<button className="ghost" onClick={()=>reviewNeedsReview?setTab("Transactions"):setTab("Update")}>Resolve outstanding checks</button>}

@@ -1,9 +1,11 @@
 "use client";
 import { useState } from "react";
 import { csvHeaders, detectCsvImport, parseGenericCsv } from "../lib/importers";
-import type { AccountKind, CsvImportMapping } from "../lib/types";
+import { currencySymbol, defaultCsvDateFormat, formatMoney, normaliseRegion } from "../lib/region";
+import type { AccountKind, CsvImportMapping, RegionalConfig } from "../lib/types";
 
 type Props = {
+  region?: RegionalConfig;
   accounts: {id:string;name:string;kind:AccountKind}[];
   mappings: CsvImportMapping[];
   onGeneric: (file:File,mapping:CsvImportMapping,save:boolean,applyBalance:boolean)=>Promise<void>;
@@ -11,11 +13,12 @@ type Props = {
   onBarclaycard: (file:File,accountId?:string)=>Promise<void>;
   onCreateAccount: (name:string,kind:AccountKind)=>string;
 };
-const blankMapping=():CsvImportMapping=>({version:1,id:`mapping-${crypto.randomUUID()}`,name:"My account CSV",accountId:"",dateColumn:"",descriptionColumn:"",amountMode:"single",amountColumn:"",spendingSign:"negative",dateFormat:"UK"});
+const blankMapping=(dateFormat:"UK"|"US"="UK"):CsvImportMapping=>({version:1,id:`mapping-${crypto.randomUUID()}`,name:"My account CSV",accountId:"",dateColumn:"",descriptionColumn:"",amountMode:"single",amountColumn:"",spendingSign:"negative",dateFormat});
 
-export default function GenericCsvImport({accounts,mappings,onGeneric,onMonzo,onBarclaycard,onCreateAccount}:Props){
+export default function GenericCsvImport({region:configuredRegion,accounts,mappings,onGeneric,onMonzo,onBarclaycard,onCreateAccount}:Props){
+  const region=normaliseRegion(configuredRegion),preferredDateFormat=defaultCsvDateFormat(region),symbol=currencySymbol(region);
   const [file,setFile]=useState<File|null>(null),[content,setContent]=useState(""),[headers,setHeaders]=useState<string[]>([]);
-  const [choice,setChoice]=useState("auto"),[mapping,setMapping]=useState<CsvImportMapping>(blankMapping);
+  const [choice,setChoice]=useState("auto"),[mapping,setMapping]=useState<CsvImportMapping>(()=>blankMapping(preferredDateFormat));
   const [error,setError]=useState(""),[preview,setPreview]=useState<ReturnType<typeof parseGenericCsv>|null>(null);
   const [save,setSave]=useState(true),[applyBalance,setApplyBalance]=useState(false),[accountName,setAccountName]=useState(""),[accountKind,setAccountKind]=useState<AccountKind>("current");
   const [providerAccountId,setProviderAccountId]=useState("");
@@ -30,7 +33,7 @@ export default function GenericCsvImport({accounts,mappings,onGeneric,onMonzo,on
     setFile(next);setPreview(null);setError("");setChoice("auto");
     try{const text=await next.text();const columns=csvHeaders(text);setContent(text);setHeaders(columns);
       const find=(...names:string[])=>columns.find(column=>names.includes(column.toLowerCase()))??"";
-      setMapping({...blankMapping(),accountId:accounts[0]?.id??"",dateColumn:find("date","transaction date","posted date"),descriptionColumn:find("description","merchant","name","payee"),amountColumn:find("amount","value"),debitColumn:find("debit","paid out"),creditColumn:find("credit","paid in")});
+      setMapping({...blankMapping(preferredDateFormat),accountId:accounts[0]?.id??"",dateColumn:find("date","transaction date","posted date"),descriptionColumn:find("description","merchant","name","payee"),amountColumn:find("amount","value"),debitColumn:find("debit","paid out"),creditColumn:find("credit","paid in")});
     }catch(cause){setContent("");setHeaders([]);setError(cause instanceof Error?cause.message:"Could not read CSV.")}
   }
   function previewRows(){try{setError("");setPreview(parseGenericCsv(content,activeMapping))}catch(cause){setPreview(null);setError(cause instanceof Error?cause.message:"Could not preview CSV.")}}
@@ -54,7 +57,7 @@ export default function GenericCsvImport({accounts,mappings,onGeneric,onMonzo,on
           {select("Transaction date", "dateColumn",true)}{select("Description / payee", "descriptionColumn",true)}
           <label className="generic-csv-field"><span>Amount layout</span><select aria-label="Amount layout" value={activeMapping.amountMode} onChange={event=>patch({amountMode:event.target.value as CsvImportMapping["amountMode"]})} disabled={choice.startsWith("mapping:")||Boolean(resolved?.mappingId&&choice==="auto")}><option value="single">One signed amount column</option><option value="debit-credit">Separate debit and credit columns</option></select></label>
           {activeMapping.amountMode==="single"?select("Amount", "amountColumn",true):<>{select("Debit", "debitColumn",true)}{select("Credit", "creditColumn",true)}</>}
-          <label className="generic-csv-field"><span>Date format</span><select aria-label="Date format" value={activeMapping.dateFormat??"UK"} onChange={event=>patch({dateFormat:event.target.value as CsvImportMapping["dateFormat"]})} disabled={choice.startsWith("mapping:")||Boolean(resolved?.mappingId&&choice==="auto")}><option value="UK">UK (day/month/year)</option><option value="ISO">ISO (year-month-day)</option><option value="US">US (month/day/year)</option></select></label>
+          <label className="generic-csv-field"><span>Date format</span><select aria-label="Date format" value={activeMapping.dateFormat??preferredDateFormat} onChange={event=>patch({dateFormat:event.target.value as CsvImportMapping["dateFormat"]})} disabled={choice.startsWith("mapping:")||Boolean(resolved?.mappingId&&choice==="auto")}><option value="UK">Day/month/year</option><option value="ISO">ISO (year-month-day)</option><option value="US">Month/day/year</option></select></label>
           {activeMapping.amountMode==="single"&&<label className="generic-csv-field"><span>Spending appears as</span><select aria-label="Spending sign" value={activeMapping.spendingSign??"negative"} onChange={event=>patch({spendingSign:event.target.value as CsvImportMapping["spendingSign"]})} disabled={choice.startsWith("mapping:")||Boolean(resolved?.mappingId&&choice==="auto")}><option value="negative">Negative amounts</option><option value="positive">Positive amounts</option></select></label>}
           {select("Reference", "referenceColumn")}{select("Transaction type", "transactionTypeColumn")}{select("Source category", "categoryColumn")}{select("Running balance (audit only)", "balanceColumn")}
         </div>
@@ -62,9 +65,9 @@ export default function GenericCsvImport({accounts,mappings,onGeneric,onMonzo,on
         <div className="generic-csv-account"><input aria-label="New account name" placeholder="New account name" value={accountName} onChange={event=>setAccountName(event.target.value)}/><select aria-label="New account kind" value={accountKind} onChange={event=>setAccountKind(event.target.value as AccountKind)}><option value="current">Current account</option><option value="savings">Savings</option><option value="credit-card">Credit card</option><option value="investment">Investment</option><option value="other">Other</option></select><button className="ghost" disabled={!accountName.trim()} onClick={()=>{const id=onCreateAccount(accountName.trim(),accountKind);patch({accountId:id});setAccountName("")}}>Add account</button></div>
         <button className="ghost" onClick={previewRows}>Preview mapped rows</button>
         {preview&&<><p role="status">{preview.transactions.length} valid rows · {preview.rejected} rejected. No data has been imported yet.</p>
-          <div className="generic-csv-preview"><table><caption>Import preview</caption><thead><tr><th>Date</th><th>Description</th><th>Amount</th><th>Account ID</th></tr></thead><tbody>{preview.transactions.slice(0,8).map((row,index)=><tr key={index}><td>{row.date}</td><td>{row.merchant}</td><td>{row.amount.toFixed(2)}</td><td>{row.account}</td></tr>)}</tbody></table></div>
+          <div className="generic-csv-preview"><table><caption>Import preview</caption><thead><tr><th>Date</th><th>Description</th><th>Amount</th><th>Account ID</th></tr></thead><tbody>{preview.transactions.slice(0,8).map((row,index)=><tr key={index}><td>{row.date}</td><td>{row.merchant}</td><td>{formatMoney(row.amount,region,true)}</td><td>{row.account}</td></tr>)}</tbody></table></div>
           {preview.issues.length>0&&<details><summary>{preview.issues.length} row issues</summary><ul>{preview.issues.map((issue,index)=><li key={index}>{issue}</li>)}</ul></details>}
-          {preview.balance&&<label><input type="checkbox" checked={applyBalance} disabled={preview.rejected>0} onChange={event=>setApplyBalance(event.target.checked)}/> Update this account’s balance to £{preview.balance.value.toFixed(2)} as of {preview.balance.asOf} (only if newer than the saved balance)</label>}
+          {preview.balance&&<label><input type="checkbox" checked={applyBalance} disabled={preview.rejected>0} onChange={event=>setApplyBalance(event.target.checked)}/> Update this account’s balance to {formatMoney(preview.balance.value,region,true)} as of {preview.balance.asOf} (only if newer than the saved balance; base currency {symbol})</label>}
           {!choice.startsWith("mapping:")&&!resolved?.mappingId&&<label><input type="checkbox" checked={save} onChange={event=>setSave(event.target.checked)}/> Save this mapping locally</label>}
           <button className="primary" onClick={()=>{if(file)void onGeneric(file,activeMapping,save&&!choice.startsWith("mapping:")&&!resolved?.mappingId,applyBalance&&Boolean(preview.balance)&&preview.rejected===0)}}>Continue to import review</button>
         </>}

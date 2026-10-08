@@ -19,6 +19,7 @@ function transactionFingerprint(transactions: Array<{id:string}>) {
 export default function Plan(props: PlanScreenProps) {
   const { averageFor, balanceReconciliations, baseMortgage, baselineMonthlyActual, baselineSinkingFunds, budgetCycle, budgetRemaining, budgetUsed, cashProgress, challengeBalanceDate, challengeBalanceInput, closeSelectedCycle, completedCycleKeys, completedCycleReview, confirmCardCoverageThrough, coverage, currentBalanceKnown, currentSavingsChallenge, cycleCloseouts, cycleKeys, cycleLabel, duplicateGroups, emergencyContribution, emergencyGap, emergencyGoal, emergencyMonths, employeePensionEstimate, employerPension, essentialCategories, essentialPlan, essentialsTotal, feeTransactions, fixedCommitmentExpected, fixedCommitmentPaid, fixedCommitmentReserved, fixedCommitments, flexCoveredCategories, flexibleBuffer, formatCoverageDate, futurePlan, futureTotal, gbp, gbpExact, housingEvidence, importError, increasedDirectDebits, investedAfterEarlyPayoff, investedAlternative, investmentContributions, investmentGrowth, isRentalMortgage, isExcludedFromSpending, lastCompletedCycleKey, latestBalanceReconciliation, latestMortgageStatement, latestSavingsChallengeTransfer, leakageRate, lifestyleCategories, lifestylePlan, lifestyleRemaining, lifestyleTotal, lifestyleUsed, liquidForEmergency, maxCompletedSpend, maxSavingsChallengeHistory, monzoBalanceTracking, mortgageChartYears, mortgageDate, mortgageImportTarget, mortgageInterestSaved, mortgageMonthsSaved, mortgageSettings, mortgageStatementRef, nonMonthlyDirectDebitReserve, nonMonthlyDirectDebits, ordinalDay, overBudgetCategories, payday, paydayAllocationsMoved, personalDirectDebitTotal, planRows, plannedMortgage, planningIncome, prepareMortgageStatement, recommendedPlanBuffer, reconcileActual, reconcileBalance, reconcileDifference, reconcileMonzoCurrentAccount, reconcileReason, remainingVariablePlan, rentalPropertyReserve, rentalPropertySurplus, repeatedSmallGroups, repeatedSmallSpend, resetBudgetPlan, reviewTransactions, reviewableSpend, salaryDates, saveSavingsChallengeBalance, savingsChallengeBalance, savingsChallengeDailyAmount, savingsChallengeHistory, savingsChallengeLatestCycle, savingsChallengeNext31, savingsChallengeNextDaily, savingsChallengeProjectedYear, savingsChallengeReconciliation, savingsChallengeTotal, savingsChallengeTracking, selectedBudgetCategorySpend, selectedBudgetComplete, selectedBudgetCycle, selectedBudgetDataState, selectedBudgetIncome, selectedBudgetSpend, selectedBudgetTransactions, selectedPrimaryMortgageSpend, selectedCloseout, selectedCloseoutNote, selectedCycleCashFlow, selectedCycleCoverage, selectedCycleDataLabel, selectedCycleIsLive, selectedCycleLatestDate, selectedCyclePayslip, selectedCycleRentIncome, selectedCycleSalaryIncome, selectedRentalMortgageSpend, selectedEssentialSpend, selectedEveryPoundAllocated, selectedEveryPoundRemaining, selectedFlexibleCashOut, selectedHousingSpend, selectedLifestyleSpend, selectedMortgageHistory, selectedMustPayOut, selectedNonMonthlyCollections, selectedOtherHousingSpend, selectedPayYourselfFirst, selectedPayYourselfFirstProgress, selectedTotalCashOut, selectedTvLicenceSpend, selectedUnreviewed, setBudgetCycle, setCategory, setChallengeBalanceDate, setChallengeBalanceInput, setCloseoutNotes, setMortgageImportTarget, setPeriod, setQuery, setReconcileBalance, setReconcileReason, setStore, setSubcategoryFilter, setTab, setTxView, spendableBalanceReady, spendingPlan, store, subscriptionSpend, subscriptionTransactions, tab, threeMonthFund, togglePaydayAllocations, totals, travelEvidenceByCycle, travelPlan, tvLicenceDirectDebit, typicalRentalMortgage, typicalRentalIncome, updateBalance, updateBudgetPlan, updateMortgagePlanner, updateSinkingFund, variableMonthlyActual, variablePlanMargin, variableSpendSoFar, variableSpendingPlan } = props;
   const planningCash=planningCashPosition(store.balances,store.profile);
+  const locale=gbp.resolvedOptions().locale,currency=gbp.resolvedOptions().currency,symbol=gbp.formatToParts(0).find(part=>part.type==="currency")?.value??currency;
   const legacyMonzoConfigured=store.balances.some(balance=>balance.id==="monzo-current");
   const legacyPotPlanning=legacyMonzoConfigured&&store.profile?.origin==="legacy";
   const runwayCashAccounts=planningCash.currentAccounts.map(balance=>({accountId:balance.id,balance:balance.value,balanceKnown:Boolean(balance.asOf)||balance.value!==0,balanceThrough:balance.asOf??store.transactions.filter(row=>transactionAccountId(row,store.imports??[],planningCash.currentAccounts.map(account=>account.id))===balance.id).map(row=>row.date).sort().at(-1)??""}));
@@ -61,10 +62,10 @@ export default function Plan(props: PlanScreenProps) {
   function restoreSignal(id:string){setStore(current=>({...current,reviewedSpendingSignals:(current.reviewedSpendingSignals??[]).filter(signal=>signal.id!==id),updatedAt:new Date().toISOString().slice(0,10)}))}
   return <>
       {tab==="Plan"&&<section className="hub-page">
-<article className="hub-hero panel"><div><span className="insight-label">PLAN</span><h2>Make the next pound intentional.</h2><p>Budget, goals and long-term decisions live together here. Use the specialist tools only when you need the detail.</p></div><div><span>Money not yet assigned</span><strong>{gbp.format(recommendedPlanBuffer)}</strong><small>After the recommended plan from {gbp.format(planningIncome)} income</small></div></article>
-<PlanCashRunway cycleLabel={key=>cycleLabel(key,payday,salaryDates)} cycleOptions={cycleKeys} cycleKey={selectedBudgetCycle} bounds={selectedCycleCoverage.bounds} allTransactions={store.transactions} personalTransactions={selectedBudgetTransactions.filter(transaction=>transaction.amount<0&&!isExcludedFromSpending(transaction)&&!isRentalMortgage(transaction)&&transaction.categoryGroup!=="property"&&transaction.category!==store.profile?.propertyConfig?.rentalCategory)} spendingPlan={spendingPlan} fixedCommitments={fixedCommitments} isLive={selectedCycleIsLive} format={gbp.format} setCycle={setBudgetCycle} openTransactions={()=>{setPeriod(`cycle:${selectedBudgetCycle}`);setTxView("Spending");setTab("Transactions")}} cashAccounts={runwayCashAccounts} imports={store.imports??[]}/>
+<article className="hub-hero panel"><div><span className="insight-label">PLAN</span><h2>Make the next unit of income intentional.</h2><p>Budget, goals and long-term decisions live together here. Use the specialist tools only when you need the detail.</p></div><div><span>Money not yet assigned</span><strong>{gbp.format(recommendedPlanBuffer)}</strong><small>After the recommended plan from {gbp.format(planningIncome)} income</small></div></article>
+<PlanCashRunway cycleLabel={key=>cycleLabel(key,payday,salaryDates)} cycleOptions={cycleKeys} cycleKey={selectedBudgetCycle} bounds={selectedCycleCoverage.bounds} allTransactions={store.transactions} personalTransactions={selectedBudgetTransactions.filter(transaction=>transaction.amount<0&&!isExcludedFromSpending(transaction)&&!isRentalMortgage(transaction)&&transaction.categoryGroup!=="property"&&transaction.category!==store.profile?.propertyConfig?.rentalCategory)} spendingPlan={spendingPlan} fixedCommitments={fixedCommitments} isLive={selectedCycleIsLive} format={gbp.format} locale={gbp.resolvedOptions().locale} setCycle={setBudgetCycle} openTransactions={()=>{setPeriod(`cycle:${selectedBudgetCycle}`);setTxView("Spending");setTab("Transactions")}} cashAccounts={runwayCashAccounts} imports={store.imports??[]}/>
 <div className="hub-grid">
-<button className="hub-card" onClick={()=>setTab("Budget")}><span>MONTHLY PLAN</span><h3>Track every pound</h3><strong>{gbp.format(spendingPlan)}</strong><p>Essentials, flexible spending and pay-yourself-first in one salary-cycle plan.</p><b>Open monthly plan →</b></button>
+<button className="hub-card" onClick={()=>setTab("Budget")}><span>MONTHLY PLAN</span><h3>Track every amount</h3><strong>{gbp.format(spendingPlan)}</strong><p>Essentials, flexible spending and pay-yourself-first in one salary-cycle plan.</p><b>Open monthly plan →</b></button>
 <button className="hub-card" onClick={()=>setTab("Goals")}><span>GOALS</span><h3>Build accessible freedom</h3><strong>{cashProgress.toFixed(0)}%</strong><p>{gbp.format(liquidForEmergency)} after card debt toward the {gbp.format(emergencyGoal.target)} emergency goal.</p><b>Open goals →</b></button>
 <button className="hub-card" onClick={()=>setTab("Mortgage")}><span>MORTGAGE</span><h3>Model the trade-off</h3><strong>{mortgageSettings.annualRate.toFixed(2)}%</strong><p>{gbp.format(mortgageSettings.balance)} outstanding. Compare overpaying with investing on equal terms.</p><b>Open mortgage planner →</b></button>
 <button className="hub-card" onClick={()=>setTab("Leakage")}><span>SPENDING INSIGHTS</span><h3>Challenge low-value spend</h3><strong>{gbp.format(reviewableSpend)}</strong><p>Reviewable spending in the selected cycle—not a demand to cut what you value.</p><b>Open insights →</b></button>
@@ -87,7 +88,7 @@ export default function Plan(props: PlanScreenProps) {
 <label>
 <span>Planned net pay</span>
 <div className="money-input">
-<b>£</b>
+<b>{symbol}</b>
 <input aria-label="Planned net pay" type="number" step="50" value={planningIncome} onChange={e=>setStore(s=>({...s,planningIncome:Number(e.target.value)}))}/>
 </div>
 </label>
@@ -155,7 +156,7 @@ export default function Plan(props: PlanScreenProps) {
 </div>
 <label className="closeout-note">
 <span>What should you remember or change next cycle?</span>
-<textarea aria-label="Pay-cycle closeout note" value={selectedCloseoutNote} onChange={event=>setCloseoutNotes(notes=>({...notes,[selectedBudgetCycle]:event.target.value}))} placeholder="For example: Travel was intentional; keep small convenience spending below £100 next cycle."/>
+<textarea aria-label="Pay-cycle closeout note" value={selectedCloseoutNote} onChange={event=>setCloseoutNotes(notes=>({...notes,[selectedBudgetCycle]:event.target.value}))} placeholder={`For example: Travel was intentional; keep small convenience spending below ${gbp.format(100)} next cycle.`}/>
 </label>
 {!selectedCycleIsLive&&!selectedCycleCoverage.cardComplete&&selectedCycleCoverage.cardHistoryStarted&&<div className="card-coverage-confirm">
 <div>
@@ -175,7 +176,7 @@ export default function Plan(props: PlanScreenProps) {
 <div className="operation-actions">
 {selectedCycleIsLive?<button className="ghost" onClick={()=>setBudgetCycle(lastCompletedCycleKey)}>Review the last completed cycle</button>:<button className="primary" disabled={!selectedBudgetComplete} onClick={closeSelectedCycle}>{selectedCloseout?"Refresh closeout & backup":"Close cycle & download backup"}</button>}
 {!selectedCycleIsLive&&!selectedBudgetComplete&&(!selectedCycleCoverage.monzoComplete||!selectedCycleCoverage.cardHistoryStarted)&&<button className="ghost" onClick={()=>setTab("Update")}>Import missing activity</button>}
-{selectedCloseout&&<small>Saved {new Date(selectedCloseout.closedAt).toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"})} · {selectedCloseout.unreviewed?`${selectedCloseout.unreviewed} uncategorised at close`:`all spending categorised`}</small>}
+{selectedCloseout&&<small>Saved {new Date(selectedCloseout.closedAt).toLocaleDateString(locale,{day:"numeric",month:"short",year:"numeric"})} · {selectedCloseout.unreviewed?`${selectedCloseout.unreviewed} uncategorised at close`:`all spending categorised`}</small>}
 </div>
 {cycleCloseouts.length>0&&<details className="operation-history"><summary>View closeout history ({cycleCloseouts.length})</summary><div>{cycleCloseouts.slice(0,6).map(closeout=>{const result=closeout.unallocated??closeout.cashFlow;return <button key={closeout.cycle} onClick={()=>setBudgetCycle(closeout.cycle)}><span><b>{cycleLabel(closeout.cycle,payday,salaryDates)}</b><small>{closeout.note||"No note saved"}</small></span><strong className={result>=0?"positive":"negative"}>{result>=0?"+":"−"}{gbp.format(Math.abs(result))}</strong></button>})}</div></details>}
 </article>
@@ -189,9 +190,9 @@ export default function Plan(props: PlanScreenProps) {
 <span className={`operation-status ${monzoBalanceTracking.enabled?"done":"waiting"}`}>{monzoBalanceTracking.enabled?"Tracking on":"Anchor needed"}</span>
 </div>
 <div className="reconciliation-equation">
-<div><span>App currently tracks</span><strong>{gbpExact.format(totals.currentAccount)}</strong><small>{monzoBalanceTracking.syncedThrough?`Transactions through ${new Date(monzoBalanceTracking.syncedThrough+"T12:00:00").toLocaleDateString("en-GB",{day:"numeric",month:"short"})}`:"No dated anchor yet"}</small></div>
+<div><span>App currently tracks</span><strong>{gbpExact.format(totals.currentAccount)}</strong><small>{monzoBalanceTracking.syncedThrough?`Transactions through ${new Date(monzoBalanceTracking.syncedThrough+"T12:00:00").toLocaleDateString(locale,{day:"numeric",month:"short"})}`:"No dated anchor yet"}</small></div>
 <i>→</i>
-<label><span>Actual Monzo balance</span><div className="money-input"><b>£</b><input aria-label="Actual Monzo current-account balance" type="number" min="0" step="0.01" value={reconcileBalance} onChange={event=>setReconcileBalance(event.target.value)} placeholder="0.00"/></div><small>Current account only—exclude pots</small></label>
+<label><span>Actual Monzo balance</span><div className="money-input"><b>{symbol}</b><input aria-label="Actual Monzo current-account balance" type="number" min="0" step="0.01" value={reconcileBalance} onChange={event=>setReconcileBalance(event.target.value)} placeholder="0.00"/></div><small>Current account only—exclude pots</small></label>
 </div>
 <div className={`reconciliation-difference ${reconcileDifference===null?"pending":Math.abs(reconcileDifference)<.005?"matched":"changed"}`}>
 <span>Difference</span>
@@ -199,8 +200,8 @@ export default function Plan(props: PlanScreenProps) {
 <small>{reconcileDifference===null?"Nothing changes until you confirm.":Math.abs(reconcileDifference)<.005?"The app and Monzo agree.":"This adjustment will be recorded without altering spending."}</small>
 </div>
 <label className="reconciliation-reason"><span>Reason</span><select aria-label="Balance reconciliation reason" value={reconcileReason} onChange={event=>setReconcileReason(event.target.value)}><option>Routine balance check</option><option>Transactions after CSV cutoff</option><option>Pending card authorisation</option><option>Missing or rejected transaction</option><option>Manual correction</option></select></label>
-<div className="operation-actions"><button className="primary" disabled={reconcileActual===null||!Number.isFinite(reconcileActual)||reconcileActual<0} onClick={reconcileMonzoCurrentAccount}>Reconcile and set new anchor</button>{latestBalanceReconciliation&&<small>Last checked {new Date(latestBalanceReconciliation.reconciledAt).toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"})} · correction {latestBalanceReconciliation.difference>=0?"+":"−"}{gbpExact.format(Math.abs(latestBalanceReconciliation.difference))}</small>}</div>
-{balanceReconciliations.length>0&&<details className="operation-history"><summary>View reconciliation history ({balanceReconciliations.length})</summary><div>{balanceReconciliations.slice(0,6).map(item=><div className="reconciliation-history-row" key={item.id}><span><b>{new Date(item.reconciledAt).toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"})}</b><small>{item.reason}{item.transactionsThrough?` · data through ${new Date(item.transactionsThrough+"T12:00:00").toLocaleDateString("en-GB",{day:"numeric",month:"short"})}`:""}</small></span><strong>{gbpExact.format(item.actualBalance)}</strong></div>)}</div></details>}
+<div className="operation-actions"><button className="primary" disabled={reconcileActual===null||!Number.isFinite(reconcileActual)||reconcileActual<0} onClick={reconcileMonzoCurrentAccount}>Reconcile and set new anchor</button>{latestBalanceReconciliation&&<small>Last checked {new Date(latestBalanceReconciliation.reconciledAt).toLocaleDateString(locale,{day:"numeric",month:"short",year:"numeric"})} · correction {latestBalanceReconciliation.difference>=0?"+":"−"}{gbpExact.format(Math.abs(latestBalanceReconciliation.difference))}</small>}</div>
+{balanceReconciliations.length>0&&<details className="operation-history"><summary>View reconciliation history ({balanceReconciliations.length})</summary><div>{balanceReconciliations.slice(0,6).map(item=><div className="reconciliation-history-row" key={item.id}><span><b>{new Date(item.reconciledAt).toLocaleDateString(locale,{day:"numeric",month:"short",year:"numeric"})}</b><small>{item.reason}{item.transactionsThrough?` · data through ${new Date(item.transactionsThrough+"T12:00:00").toLocaleDateString(locale,{day:"numeric",month:"short"})}`:""}</small></span><strong>{gbpExact.format(item.actualBalance)}</strong></div>)}</div></details>}
 </article>}
 </section>
         <article className={lifestyleRemaining>=0?"panel flex-budget-panel healthy":"panel flex-budget-panel over"}>
@@ -234,7 +235,7 @@ export default function Plan(props: PlanScreenProps) {
 {legacyMonzoConfigured&&<label>
 <span>Monzo current account</span>
 <div className="money-input">
-<b>£</b>
+<b>{symbol}</b>
 <input aria-label="Monzo current account balance" type="number" min="0" step="0.01" value={totals.currentAccount} onChange={event=>updateBalance("monzo-current",Number(event.target.value))}/>
 </div>
 </label>}
@@ -385,7 +386,7 @@ export default function Plan(props: PlanScreenProps) {
 {nonMonthlyDirectDebits.length>0&&<div className="non-monthly-bill-strip">
 <div><span>Quarterly & annual provision</span><strong>{gbpExact.format(nonMonthlyDirectDebitReserve)}/month</strong><small>{nonMonthlyDirectDebits.length} non-monthly payment{nonMonthlyDirectDebits.length===1?"":"s"} smoothed across the year</small></div>
 <div><span>Collected this cycle</span><strong>{gbpExact.format(selectedNonMonthlyCollections)}</strong><small>{selectedNonMonthlyCollections?"Shown in actual spending on its collection date":"No quarterly or annual collection has left the account"}</small></div>
-{tvLicenceDirectDebit&&<div><span>TV Licensing</span><strong>{gbpExact.format(tvLicenceDirectDebit.monthlyEquivalent)}/month provision</strong><small>{selectedTvLicenceSpend?`${gbpExact.format(selectedTvLicenceSpend)} actually collected this cycle`:"£0 actual spend this cycle"}</small></div>}
+{tvLicenceDirectDebit&&<div><span>TV Licensing</span><strong>{gbpExact.format(tvLicenceDirectDebit.monthlyEquivalent)}/month provision</strong><small>{selectedTvLicenceSpend?`${gbpExact.format(selectedTvLicenceSpend)} actually collected this cycle`:`${gbpExact.format(0)} actual spend this cycle`}</small></div>}
 </div>}
 <div className="fixed-commitment-head">
 <span>Commitment</span>
@@ -441,7 +442,7 @@ export default function Plan(props: PlanScreenProps) {
         <article className="panel every-pound-allocation">
 <div className="panel-head">
 <div>
-<span className="insight-label">EVERY POUND HAS A JOB</span>
+<span className="insight-label">EVERY PART OF YOUR INCOME HAS A JOB</span>
 <h3>Pay yourself before flexible spending.</h3>
 <p>This reconciles the selected cycle&apos;s income across must-pay costs, savings and investments, flexible costs, and money that is still unallocated.</p>
 </div>
@@ -470,7 +471,7 @@ export default function Plan(props: PlanScreenProps) {
 <details className="panel plan-card plan-editor">
 <summary>
 <span><b>Next pay-cycle plan</b><small>{gbp.format(essentialsTotal)} essentials · {gbp.format(lifestyleTotal)} lifestyle · {gbp.format(futureTotal)} future you</small></span>
-<span className={flexibleBuffer>=0?"plan-balance-chip":"plan-balance-chip over"}>{flexibleBuffer===0?"Every pound assigned":flexibleBuffer>0?`${gbp.format(flexibleBuffer)} buffer`:`${gbp.format(Math.abs(flexibleBuffer))} over income`}</span>
+<span className={flexibleBuffer>=0?"plan-balance-chip":"plan-balance-chip over"}>{flexibleBuffer===0?"Every amount assigned":flexibleBuffer>0?`${gbp.format(flexibleBuffer)} buffer`:`${gbp.format(Math.abs(flexibleBuffer))} over income`}</span>
 <i>Build plan</i>
 </summary>
 <div className="plan-editor-content">
@@ -494,7 +495,7 @@ export default function Plan(props: PlanScreenProps) {
 </div>
 <div className="essential-plan-cards">{essentialPlan.map(item=>
 <article className={item.fixedCommitments?"essential-plan-card committed":"essential-plan-card"} key={item.name}>
-<header><span><b>{item.name}</b><small>{item.fixedCommitments?"Committed floor protected":item.explicitlyEdited?"Your saved amount":"Seeded from last cycle"}</small></span><div className="mini-money-input"><span>£</span><input aria-label={`${item.name} next pay-cycle plan`} type="number" step="0.01" min={item.fixedCommitments} value={item.amount} onChange={e=>updateBudgetPlan(item.name,Math.max(item.fixedCommitments,Number(e.target.value)))}/></div></header>
+<header><span><b>{item.name}</b><small>{item.fixedCommitments?"Committed floor protected":item.explicitlyEdited?"Your saved amount":"Seeded from last cycle"}</small></span><div className="mini-money-input"><span>{symbol}</span><input aria-label={`${item.name} next pay-cycle plan`} type="number" step="0.01" min={item.fixedCommitments} value={item.amount} onChange={e=>updateBudgetPlan(item.name,Math.max(item.fixedCommitments,Number(e.target.value)))}/></div></header>
 <div className="essential-card-evidence"><p><span>Last cycle</span><strong>{gbpExact.format(item.lastCycleActual)}</strong></p><p className={item.fixedCommitments?"fixed-evidence":""}><span>Fixed commitments</span><strong>{item.fixedCommitments?gbpExact.format(item.fixedCommitments):"None"}</strong></p><p><span>Additional allowance</span><strong>{gbpExact.format(Math.max(0,item.amount-item.fixedCommitments))}</strong></p></div>
 {item.fixedCommitments?<details className="commitment-breakdown inline-breakdown"><summary>See what makes up {gbpExact.format(item.fixedCommitments)}</summary><div>{item.commitmentDetails.map(detail=><p key={detail.key}><span>{detail.label}<small>{detail.source}</small></span><strong>{gbpExact.format(detail.amount)}</strong></p>)}<p className="commitment-total"><span>Total fixed commitments</span><strong>{gbpExact.format(item.fixedCommitments)}</strong></p></div></details>:<small className="variable-essential-note">No fixed payment is known. Your plan is fully adjustable.</small>}
 <footer><span>Fixed {gbpExact.format(item.fixedCommitments)}</span><i>+</i><span>Allowance {gbpExact.format(Math.max(0,item.amount-item.fixedCommitments))}</span><i>=</i><strong>Plan {gbpExact.format(item.amount)}</strong></footer>
@@ -506,7 +507,7 @@ export default function Plan(props: PlanScreenProps) {
 <span className={`plan-status-chip ${lifestyleStatus}`}><i aria-hidden="true"/>{lifestyleStatusLabel}</span>
 <strong>{gbp.format(lifestyleTotal)}</strong>
 </div>
-<p className="plan-group-note">{gbp.format(selectedLifestyleSpend)} used this cycle. {selectedCycleIsLive?`${gbp.format(lifestylePacedAllowance)} is the paced allowance through ${new Date(`${paceThrough}T12:00:00`).toLocaleDateString("en-GB",{day:"numeric",month:"short"})}.`:`The completed-cycle allowance was ${gbp.format(lifestyleTotal)}.`} Move freely between categories; the combined envelope is what matters.</p>
+<p className="plan-group-note">{gbp.format(selectedLifestyleSpend)} used this cycle. {selectedCycleIsLive?`${gbp.format(lifestylePacedAllowance)} is the paced allowance through ${new Date(`${paceThrough}T12:00:00`).toLocaleDateString(locale,{day:"numeric",month:"short"})}.`:`The completed-cycle allowance was ${gbp.format(lifestyleTotal)}.`} Move freely between categories; the combined envelope is what matters.</p>
 <div className="plan-group-columns lifestyle-columns">
 <span>Category</span>
 <span>Last cycle</span>
@@ -517,7 +518,7 @@ export default function Plan(props: PlanScreenProps) {
 </span>
 <b>{gbp.format(item.lastCycleActual)}</b>
 <div className="mini-money-input">
-<span>£</span>
+<span>{symbol}</span>
 <input aria-label={`${item.name} next pay-cycle plan`} type="number" step="10" min={item.fixedCommitments} value={item.amount} onChange={e=>updateBudgetPlan(item.name,Math.max(item.fixedCommitments,Number(e.target.value)))}/>
 </div>
 </label>)}</div>
@@ -535,7 +536,7 @@ export default function Plan(props: PlanScreenProps) {
 <span>{item.name}<small>automatic payday allocation</small>
 </span>
 <div className="mini-money-input">
-<span>£</span>
+<span>{symbol}</span>
 <input aria-label={`${item.name} next pay-cycle plan`} type="number" step="25" min="0" value={item.amount} onChange={e=>updateBudgetPlan(item.name,Number(e.target.value))}/>
 </div>
 </label>)}</div>
@@ -599,8 +600,8 @@ export default function Plan(props: PlanScreenProps) {
 <article className="panel category-tracker">
 <div className="panel-head">
 <div>
-<h3>Where every pound of spending went</h3>
-<p>Category detail for genuine spending in {cycleLabel(selectedBudgetCycle,payday,salaryDates)}. Housing includes both mortgages; savings and investments appear in the every-pound allocation above.</p>
+<h3>Where all spending went</h3>
+<p>Category detail for genuine spending in {cycleLabel(selectedBudgetCycle,payday,salaryDates)}. Housing includes both mortgages; savings and investments appear in the allocation above.</p>
 </div>
 <div className="tracker-total">
 <span>Total cash out</span>
@@ -705,7 +706,7 @@ export default function Plan(props: PlanScreenProps) {
 <span className="source-plan">
 <i/>SENSIBLE START</span>
 <p>
-<b>£7,200 allocated:</b> {gbp.format(essentialsTotal)} essentials, {gbp.format(lifestyleTotal)} guilt-free life and {gbp.format(futureTotal)} future you.</p>
+<b>{gbp.format(7200)} allocated:</b> {gbp.format(essentialsTotal)} essentials, {gbp.format(lifestyleTotal)} guilt-free life and {gbp.format(futureTotal)} future you.</p>
 </div>
 <div>
 <span className="source-check">
@@ -809,7 +810,7 @@ export default function Plan(props: PlanScreenProps) {
         </div>
         {reviewedSignalsForCycle.length>0&&<details className="reviewed-signal-history">
 <summary>{reviewedSignalsForCycle.length} reviewed item{reviewedSignalsForCycle.length===1?"":"s"}</summary>
-<div>{reviewedSignalsForCycle.map(signal=><div key={signal.id}><span><strong>{signal.title}</strong><small>Reviewed {new Date(signal.reviewedAt).toLocaleDateString("en-GB",{day:"numeric",month:"short"})}</small></span><button type="button" onClick={()=>restoreSignal(signal.id)}>Restore</button></div>)}</div>
+<div>{reviewedSignalsForCycle.map(signal=><div key={signal.id}><span><strong>{signal.title}</strong><small>Reviewed {new Date(signal.reviewedAt).toLocaleDateString(locale,{day:"numeric",month:"short"})}</small></span><button type="button" onClick={()=>restoreSignal(signal.id)}>Restore</button></div>)}</div>
 </details>}
 </article>
         <article className="panel leakage-guidance">
@@ -852,14 +853,14 @@ export default function Plan(props: PlanScreenProps) {
 <div className="savings-challenge-total">
 <span>Current pot balance</span>
 <strong>{gbpExact.format(savingsChallengeBalance)}</strong>
-<small>Anchored {new Date(`${savingsChallengeTracking.syncedThrough}T12:00:00`).toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric"})} · newer CSV transactions roll it forward</small>
+<small>Anchored {new Date(`${savingsChallengeTracking.syncedThrough}T12:00:00`).toLocaleDateString(locale,{day:"numeric",month:"long",year:"numeric"})} · newer CSV transactions roll it forward</small>
 </div>
 </div>
 <div className="challenge-balance-reconciliation">
-<div><span>Reconstructed contributions</span><strong>{gbpExact.format(savingsChallengeTotal)}</strong><small>{currentSavingsChallenge.length} transfers through {latestSavingsChallengeTransfer?.date?new Date(latestSavingsChallengeTransfer.date+"T12:00:00").toLocaleDateString("en-GB",{day:"numeric",month:"long"}):"the latest import"} · refreshed from every Monzo CSV</small></div>
+<div><span>Reconstructed contributions</span><strong>{gbpExact.format(savingsChallengeTotal)}</strong><small>{currentSavingsChallenge.length} transfers through {latestSavingsChallengeTransfer?.date?new Date(latestSavingsChallengeTransfer.date+"T12:00:00").toLocaleDateString(locale,{day:"numeric",month:"long"}):"the latest import"} · refreshed from every Monzo CSV</small></div>
 <div><span>Balance reconciliation</span><strong className={Math.abs(savingsChallengeReconciliation)<.01?"positive":savingsChallengeReconciliation>0?"positive":"negative"}>{savingsChallengeReconciliation>=0?"+":"−"}{gbpExact.format(Math.abs(savingsChallengeReconciliation))}</strong><small>{Math.abs(savingsChallengeReconciliation)<.01?"Live balance and imported history agree":savingsChallengeReconciliation>0?"Live pot is ahead of imported contribution history":"Imported contributions exceed the live pot balance"}</small></div>
 <div className="challenge-balance-editor">
-<label><span>Verified pot balance</span><div className="money-input"><b>£</b><input aria-label="Verified savings challenge pot balance" inputMode="decimal" value={challengeBalanceInput} onChange={event=>setChallengeBalanceInput(event.target.value)}/></div></label>
+<label><span>Verified pot balance</span><div className="money-input"><b>{symbol}</b><input aria-label="Verified savings challenge pot balance" inputMode="decimal" value={challengeBalanceInput} onChange={event=>setChallengeBalanceInput(event.target.value)}/></div></label>
 <label><span>As of</span><input aria-label="Savings challenge balance date" type="date" value={challengeBalanceDate} onChange={event=>setChallengeBalanceDate(event.target.value)}/></label>
 <button className="primary" onClick={saveSavingsChallengeBalance}>Update balance</button>
 </div>
@@ -937,21 +938,21 @@ export default function Plan(props: PlanScreenProps) {
 <label>
 <span>Current</span>
 <div>
-<b>£</b>
+<b>{symbol}</b>
 <input type="number" min="0" value={fund.current} onChange={event=>updateSinkingFund(fund.id,"current",Number(event.target.value))}/>
 </div>
 </label>
 <label>
 <span>Target</span>
 <div>
-<b>£</b>
+<b>{symbol}</b>
 <input type="number" min="0" value={fund.target} onChange={event=>updateSinkingFund(fund.id,"target",Number(event.target.value))}/>
 </div>
 </label>
 <label>
 <span>Monthly</span>
 <div>
-<b>£</b>
+<b>{symbol}</b>
 <input type="number" min="0" value={fund.monthly} onChange={event=>updateSinkingFund(fund.id,"monthly",Number(event.target.value))}/>
 </div>
 </label>
@@ -981,7 +982,7 @@ export default function Plan(props: PlanScreenProps) {
 <h3>Keep balances current from a CSV</h3>
 <p>Choose the property, preview the detected balance, then confirm. Imports update Accounts, net worth and the dated balance history without storing account numbers.</p>
 </div>
-{latestMortgageStatement?<span className="safe-badge">Updated {new Date(latestMortgageStatement.statementDate+"T12:00:00").toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"})}</span>:<span className="status-pill amber">No statement yet</span>}
+{latestMortgageStatement?<span className="safe-badge">Updated {new Date(latestMortgageStatement.statementDate+"T12:00:00").toLocaleDateString(locale,{day:"numeric",month:"short",year:"numeric"})}</span>:<span className="status-pill amber">No statement yet</span>}
 </div>
 <div className="mortgage-import-controls">
 <label>
@@ -995,7 +996,7 @@ export default function Plan(props: PlanScreenProps) {
 <span>Current tracked balance</span>
 <strong>{gbpExact.format(store.balances.find(balance=>balance.id===mortgageImportTarget)?.value??0)}</strong>
 <small>{latestMortgageStatement?latestMortgageStatement.fileName:"Entered manually under Accounts"}</small>
-{latestMortgageStatement?.interestRate!==undefined&&<em>Statement rate <b>{latestMortgageStatement.interestRate.toFixed(2)}%</b>{latestMortgageStatement.interestRateDate?` from ${new Date(latestMortgageStatement.interestRateDate+"T12:00:00").toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"})}`:""}</em>}
+{latestMortgageStatement?.interestRate!==undefined&&<em>Statement rate <b>{latestMortgageStatement.interestRate.toFixed(2)}%</b>{latestMortgageStatement.interestRateDate?` from ${new Date(latestMortgageStatement.interestRateDate+"T12:00:00").toLocaleDateString(locale,{day:"numeric",month:"short",year:"numeric"})}`:""}</em>}
 </div>
 <div className="mortgage-upload-action">
 <input ref={mortgageStatementRef} className="visually-hidden" type="file" accept=".csv,text/csv" aria-label="Upload mortgage statement CSV" onChange={event=>{const file=event.target.files?.[0];if(file)void prepareMortgageStatement(file)}}/>
@@ -1006,14 +1007,14 @@ export default function Plan(props: PlanScreenProps) {
 {importError&&<div className="import-inline-error" role="alert"><strong>Import needs attention</strong><span>{importError}</span></div>}
 {selectedMortgageHistory.length>0&&<details className="mortgage-history">
 <summary>View {selectedMortgageHistory.length} imported statement{selectedMortgageHistory.length===1?"":"s"}</summary>
-<div className="table-wrap"><table><caption>{mortgageImportTarget==="mortgage"?homeLabel:rentalLabel} mortgage balance history</caption><thead><tr><th>Statement date</th><th>Balance</th><th>Rate</th><th>Movement</th><th>File</th></tr></thead><tbody>{selectedMortgageHistory.map((record,index)=>{const older=selectedMortgageHistory[index+1];const movement=older?record.balance-older.balance:undefined;return <tr key={record.id}><td>{new Date(record.statementDate+"T12:00:00").toLocaleDateString("en-GB")}</td><td className="amount">{gbpExact.format(record.balance)}</td><td>{record.interestRate===undefined?"—":`${record.interestRate.toFixed(2)}%`}</td><td className={movement===undefined?"":"amount "+(movement<=0?"positive":"negative")}>{movement===undefined?"—":`${movement>0?"+":""}${gbpExact.format(movement)}`}</td><td>{record.fileName}</td></tr>})}</tbody></table></div>
+<div className="table-wrap"><table><caption>{mortgageImportTarget==="mortgage"?homeLabel:rentalLabel} mortgage balance history</caption><thead><tr><th>Statement date</th><th>Balance</th><th>Rate</th><th>Movement</th><th>File</th></tr></thead><tbody>{selectedMortgageHistory.map((record,index)=>{const older=selectedMortgageHistory[index+1];const movement=older?record.balance-older.balance:undefined;return <tr key={record.id}><td>{new Date(record.statementDate+"T12:00:00").toLocaleDateString(locale)}</td><td className="amount">{gbpExact.format(record.balance)}</td><td>{record.interestRate===undefined?"—":`${record.interestRate.toFixed(2)}%`}</td><td className={movement===undefined?"":"amount "+(movement<=0?"positive":"negative")}>{movement===undefined?"—":`${movement>0?"+":""}${gbpExact.format(movement)}`}</td><td>{record.fileName}</td></tr>})}</tbody></table></div>
 </details>}
 </article>
         <section className="mortgage-input-grid panel">
 <label>
 <span>Mortgage balance</span>
 <div className="money-input">
-<b>£</b>
+<b>{symbol}</b>
 <input aria-label="Mortgage balance" type="number" min="0" step="100" value={mortgageSettings.balance} onChange={event=>updateMortgagePlanner("balance",Number(event.target.value))}/>
 </div>
 </label>
@@ -1027,7 +1028,7 @@ export default function Plan(props: PlanScreenProps) {
 <label>
 <span>Contractual payment</span>
 <div className="money-input">
-<b>£</b>
+<b>{symbol}</b>
 <input aria-label="Contractual monthly payment" type="number" min="0" step="10" value={mortgageSettings.monthlyPayment} onChange={event=>updateMortgagePlanner("monthlyPayment",Number(event.target.value))}/>
 </div>
 </label>
@@ -1056,7 +1057,7 @@ export default function Plan(props: PlanScreenProps) {
 <label>
 <span>Custom monthly</span>
 <div className="money-input">
-<b>£</b>
+<b>{symbol}</b>
 <input aria-label="Custom monthly overpayment" type="number" min="0" step="25" value={mortgageSettings.monthlyOverpayment} onChange={event=>updateMortgagePlanner("monthlyOverpayment",Number(event.target.value))}/>
 </div>
 </label>
@@ -1064,13 +1065,13 @@ export default function Plan(props: PlanScreenProps) {
 <span>Annual lump sum</span>
 <div className="scenario-chips">
 <button className={mortgageSettings.annualOverpayment===0?"active":""} onClick={()=>updateMortgagePlanner("annualOverpayment",0)}>None</button>
-<button className={mortgageSettings.annualOverpayment===10000?"active":""} onClick={()=>updateMortgagePlanner("annualOverpayment",10000)}>+£10,000</button>
+<button className={mortgageSettings.annualOverpayment===10000?"active":""} onClick={()=>updateMortgagePlanner("annualOverpayment",10000)}>+{gbp.format(10000)}</button>
 </div>
 </div>
 <label>
 <span>Custom annual</span>
 <div className="money-input">
-<b>£</b>
+<b>{symbol}</b>
 <input aria-label="Custom annual overpayment" type="number" min="0" step="500" value={mortgageSettings.annualOverpayment} onChange={event=>updateMortgagePlanner("annualOverpayment",Number(event.target.value))}/>
 </div>
 </label>
@@ -1155,7 +1156,7 @@ export default function Plan(props: PlanScreenProps) {
 <span>
 <b>1</b>Clear expensive card debt</span>
 <span>
-<b>2</b>Build cash toward £15,000</span>
+<b>2</b>Build cash toward {gbp.format(15000)}</span>
 <span>
 <b>3</b>Check lender overpayment limits</span>
 <span>

@@ -23,9 +23,10 @@ Personal CFO is an early public release. The core app is usable today, but some 
 - Monthly Review, cycle closeout and balance snapshots
 - Configurable goals and account-coverage rules
 - Portable JSON backups
+- Profile-level country, currency and locale settings for regional money and date presentation
 - Optional UK Tax evidence workspace, disabled for new installations
 
-Personal CFO does **not** currently provide bank API syncing, Open Banking, cloud sync, multi-user accounts or hosted authentication.
+Personal CFO uses one base currency per profile and does not perform currency conversion. It does **not** currently provide bank API syncing, Open Banking, cloud sync, multi-user accounts or hosted authentication.
 
 ## Quick start
 
@@ -75,14 +76,23 @@ A fresh installation starts with neutral onboarding and no accounts, transaction
 
 Onboarding lets you:
 
-1. Add accounts and dated opening balances.
-2. Import optional transaction history.
-3. Confirm income sources and payday.
-4. Confirm recurring commitments.
-5. Review or rename categories.
-6. Add optional goals.
+1. Choose a country, currency and locale for presentation.
+2. Add accounts and dated opening balances.
+3. Import optional transaction history.
+4. Confirm income sources and payday.
+5. Confirm recurring commitments.
+6. Review or rename categories.
+7. Add optional goals.
 
 Native provider adapters remain available, but the Generic CSV route is the provider-neutral option.
+
+US profiles default new Generic CSV mappings to month/day/year. Other bundled regional presets default to day/month/year, and ISO can always be selected explicitly. Saved mappings keep their existing choice. Monzo and Barclaycard remain optional UK-oriented adapters.
+
+## Regional scope
+
+The finance core supports United Kingdom, Ireland, United States, Canada, Australia and New Zealand presets, plus custom ISO currency and BCP-47 locale values. Currency controls presentation only: changing it never changes balances, transactions, history or calculations. Multi-currency accounts and currency conversion are intentionally out of scope.
+
+UK Tax is an optional UK-specific feature pack and remains disabled on fresh installations. Personal CFO does not attempt to calculate tax for other countries.
 
 ## Imports
 

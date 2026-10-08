@@ -8,6 +8,7 @@ import type { HomeScreenPropsWithHealthHistory } from "../lib/screen-props";
 export default function Home(props: HomeScreenPropsWithHealthHistory) {
   const {review:reviewCategory,reviewSubcategory}=props.categoryLabels;
   const { overviewCycleTransactions, balancesAsOf, allocationGradient, assetMix, cashProgress, cfoAttentionItems, currentCycleDataState, currentCycleKey, cycleAnnotations, cycleBounds, cycleKeys, cycleLabel, gbp, healthHistoryDisplay, healthMovement, healthReadiness, healthScore, homeChangeSummary, kpis, latestCategorySpend, latestCycleKey, latestDataCycleKey, latestNeedsReview, latestOverPlan, latestRepeatedSmallSpend, maxMonth, maxSnapshot, mixColours, monthly, monthlyFocus, netGrowth, overviewCategorySpend, overviewCycle, overviewCycleKey, overviewDataState, overviewExcludedMovements, overviewFlexibleSpend, overviewFlowReady, overviewIncome, overviewMustPay, overviewMustPayTransactions, overviewNeedsReview, overviewSavings, overviewSavingsBreakdown, overviewSavingsRate, overviewSpending, overviewSpendingTreatments, overviewUnderlyingSpending, overviewUnallocated, payday, planRows, salaryDates, setBudgetCycle, setCategory, setDetailKey, setOverviewCycle, setPeriod, setQuery, setSubcategoryFilter, setTab, setTxView, snapshots, tab, topFocusCategory, totals } = props;
+  const locale=gbp.resolvedOptions().locale;
   const currentAnnotation=cycleAnnotations[currentCycleKey];
   const movement=savingsTotals(overviewCycleTransactions);
   const savingsMovementLabel=overviewSavings<0?"Savings used":"Saved & invested";
@@ -42,10 +43,10 @@ export default function Home(props: HomeScreenPropsWithHealthHistory) {
 
         <div className="home-cycle-picker"><label><span>Spending and saving cycle</span><select value={overviewCycle} onChange={e=>{setOverviewCycle(e.target.value);setBudgetCycle(e.target.value)}}><option value="latest">Current cycle · {cycleLabel(currentCycleKey,payday,salaryDates)}</option>{cycleKeys.filter(key=>key!==currentCycleKey).slice(0,12).map(key=><option key={key} value={key}>{cycleLabel(key,payday,salaryDates)}</option>)}</select></label><p>Balances show your latest account records. Spending and saving show the selected pay cycle.</p></div>
         <section className="home-kpi-grid" aria-label="Current financial summary">
-<button className="home-kpi-card cash" onClick={()=>setDetailKey("accessible")}><span>Cash after card debt</span><strong>{gbp.format(totals.netLiquid)}</strong><small>Current accounts + cash savings + Cash ISAs − cards</small><i>{cashProgress.toFixed(0)}% of emergency goal · {balancesAsOf?`balances from ${new Date(balancesAsOf+"T12:00:00").toLocaleDateString("en-GB")}`:"Check individual account dates"}</i></button>
+<button className="home-kpi-card cash" onClick={()=>setDetailKey("accessible")}><span>Cash after card debt</span><strong>{gbp.format(totals.netLiquid)}</strong><small>Current accounts + cash savings + Cash ISAs − cards</small><i>{cashProgress.toFixed(0)}% of emergency goal · {balancesAsOf?`balances from ${new Date(balancesAsOf+"T12:00:00").toLocaleDateString(locale)}`:"Check individual account dates"}</i></button>
 <button className={`home-kpi-card spending state-${overviewDataState}`} onClick={()=>{setQuery("");setCategory("All categories");setSubcategoryFilter("All subcategories");setPeriod(`cycle:${overviewCycleKey}`);setTxView("Spending");setTab("Transactions")}}><span>{overviewCycleKey===currentCycleKey?"Spending this cycle":"Selected-cycle spending"}</span><strong>{overviewFlowReady?gbp.format(overviewSpending):"Awaiting data"}</strong><small>{cycleLabel(overviewCycleKey,payday,salaryDates)}</small><i>{overviewFlowReady?`${gbp.format(overviewUnderlyingSpending)} underlying`:"Import activity to begin"}</i></button>
 <button className={`home-kpi-card savings ${overviewSavings<0?"withdrawn":""}`} onClick={()=>setDetailKey("savings")}><span>{savingsMovementLabel}</span><strong>{overviewFlowReady?gbp.format(Math.abs(overviewSavings)):"Awaiting data"}</strong><small>{cycleLabel(overviewCycleKey,payday,salaryDates)}</small><small>{overviewFlowReady?savingsBreakdownLabel:"Waiting for activity"}</small>{overviewFlowReady&&overviewSavings!==0&&<i>{overviewSavings<0?"Drawn back into cash":`${overviewSavingsRate.toFixed(0)}% of income`}</i>}</button>
-<button className="home-kpi-card wealth" onClick={()=>setDetailKey("growth")}><span>Net worth</span><strong>{gbp.format(totals.net)}</strong><small>{balancesAsOf?`Account values from ${new Date(balancesAsOf+"T12:00:00").toLocaleDateString("en-GB")} · `:"Account dates vary · "}{netGrowth>=0?"+":"−"}{gbp.format(Math.abs(netGrowth))} since first snapshot</small><i>{gbp.format(totals.pension)} in pensions</i></button>
+<button className="home-kpi-card wealth" onClick={()=>setDetailKey("growth")}><span>Net worth</span><strong>{gbp.format(totals.net)}</strong><small>{balancesAsOf?`Account values from ${new Date(balancesAsOf+"T12:00:00").toLocaleDateString(locale)} · `:"Account dates vary · "}{netGrowth>=0?"+":"−"}{gbp.format(Math.abs(netGrowth))} since first snapshot</small><i>{gbp.format(totals.pension)} in pensions</i></button>
 </section>
 
         <section className={`panel home-decision-brief ${primaryAction?`tone-${primaryAction.tone}`:"tone-green"}`} aria-label="Monthly decision brief">
@@ -66,7 +67,7 @@ export default function Home(props: HomeScreenPropsWithHealthHistory) {
 <div className="money-map-head">
 <div>
 <span className="insight-label">THIS CYCLE AT A GLANCE</span>
-<h2>Follow every pound from payday.</h2>
+<h2>Follow your money from payday.</h2>
 <p>Internal transfers, pot movements and card repayments are excluded so income and spending are counted once.</p>
 </div>
 <label>
@@ -89,7 +90,7 @@ export default function Home(props: HomeScreenPropsWithHealthHistory) {
 <li className={`result ${overviewFlowReady&&overviewUnallocated<0?"over":""}`}><span>Cycle result</span><strong>{overviewFlowReady?`${overviewUnallocated>=0?"+":"−"}${gbp.format(Math.abs(overviewUnallocated))}`:"Not ready"}</strong><small>Cash-flow result, not bank balance</small></li>
 </ol>
 {overviewFlowReady&&overviewSavings<0&&<p className="savings-funded-note"><strong>This cycle used savings.</strong><span>{gbp.format(Math.abs(overviewSavings))} was withdrawn net. Without that withdrawal, income was {gbp.format(Math.max(0,overviewSpending-overviewIncome))} below spending.</span></p>}
-{overviewFlowReady&&<SpendingSummary transactions={overviewCycleTransactions}/>}
+{overviewFlowReady&&<SpendingSummary transactions={overviewCycleTransactions} money={gbp}/>}
 {overviewFlowReady&&<div className="home-underlying-note"><span>Total spending <b>{gbp.format(overviewSpending)}</b></span>{overviewSpendingTreatments["Planned one-off"]>0&&<span>Planned one-offs <b>{gbp.format(overviewSpendingTreatments["Planned one-off"])}</b></span>}<span>Normal spending excluding one-offs <b>{gbp.format(overviewUnderlyingSpending)}</b></span></div>}
 {overviewCategorySpend.length?<div className="money-map-grid">
 <div className="money-map-categories">
@@ -147,15 +148,15 @@ export default function Home(props: HomeScreenPropsWithHealthHistory) {
 <div className="health-current"><span>Data confidence</span><strong>{healthReadiness.confidence}</strong></div>
 </div>
 {!healthReadiness.ready?<div className="empty-state"><strong>Financial Health Score is waiting for complete data.</strong><span>{healthReadiness.message}</span></div>:<><div className="health-history-chart" role="img" aria-label={`Financial Health Score history from ${healthHistoryDisplay[0]?.score??healthScore} to ${healthScore} out of 100`}>{healthHistoryDisplay.map((point,index)=>
-<div className={`health-history-point version-${point.version}`} key={`${point.date}-${point.version}-${index}`} aria-label={`${new Date(point.date+"T12:00:00").toLocaleDateString("en-GB",{month:"long",year:"numeric"})}: ${point.score} out of 100, score version ${point.version}`} title={`${new Date(point.date+"T12:00:00").toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric"})}: ${point.score}/100 · v${point.version}${point.estimated?" (reconstructed from saved data)":""}`}>
+<div className={`health-history-point version-${point.version}`} key={`${point.date}-${point.version}-${index}`} aria-label={`${new Date(point.date+"T12:00:00").toLocaleDateString(locale,{month:"long",year:"numeric"})}: ${point.score} out of 100, score version ${point.version}`} title={`${new Date(point.date+"T12:00:00").toLocaleDateString(locale,{day:"numeric",month:"long",year:"numeric"})}: ${point.score}/100 · v${point.version}${point.estimated?" (reconstructed from saved data)":""}`}>
 <strong>{point.score}</strong>
 <div>
 <i className={point.score>=80?"green":point.score>=65?"amber":"orange"} style={{height:`${Math.max(8,point.score*1.35)}px`}}/>
 </div>
-<span>{new Date(point.date+"T12:00:00").toLocaleDateString("en-GB",{month:"short",year:"2-digit"})}</span>
+<span>{new Date(point.date+"T12:00:00").toLocaleDateString(locale,{month:"short",year:"2-digit"})}</span>
 <small>{point.live?"Live · v3":point.estimated?`Reconstructed · v${point.version}`:`Saved · v${point.version}`}</small>
 </div>)}</div>
-<details className="chart-data"><summary>View score data</summary><table><thead><tr><th>Date</th><th>Score</th><th>Version</th><th>Source</th></tr></thead><tbody>{healthHistoryDisplay.map((point,index)=><tr key={`${point.date}-${point.version}-${index}`}><td>{new Date(point.date+"T12:00:00").toLocaleDateString("en-GB")}</td><td>{point.score}/100</td><td>v{point.version}</td><td>{point.live?"Live":point.estimated?"Reconstructed":"Saved"}</td></tr>)}</tbody></table></details>
+<details className="chart-data"><summary>View score data</summary><table><thead><tr><th>Date</th><th>Score</th><th>Version</th><th>Source</th></tr></thead><tbody>{healthHistoryDisplay.map((point,index)=><tr key={`${point.date}-${point.version}-${index}`}><td>{new Date(point.date+"T12:00:00").toLocaleDateString(locale)}</td><td>{point.score}/100</td><td>v{point.version}</td><td>{point.live?"Live":point.estimated?"Reconstructed":"Saved"}</td></tr>)}</tbody></table></details>
  </>}
 <div className="health-history-note">
 <i/>
@@ -178,11 +179,11 @@ export default function Home(props: HomeScreenPropsWithHealthHistory) {
 <button className="text-button" onClick={()=>setTab("Update")}>Update now →</button>
 </div>
 {snapshots.length?<><div className="trend-chart" role="img" aria-label={`Net worth changed from ${gbp.format(snapshots[0].netWorth)} to ${gbp.format(snapshots.at(-1)?.netWorth??totals.net)}`}>{snapshots.map((s,i)=>
-<div className="trend-point" key={s.date} title={`${new Date(s.date+"T12:00:00").toLocaleDateString("en-GB")}: ${gbp.format(s.netWorth)}`}>
+<div className="trend-point" key={s.date} title={`${new Date(s.date+"T12:00:00").toLocaleDateString(locale)}: ${gbp.format(s.netWorth)}`}>
 <div className="trend-value">{i===snapshots.length-1?gbp.format(s.netWorth):""}</div>
 <i style={{height:`${Math.max(s.netWorth/maxSnapshot*150,8)}px`}}/>
-<span>{new Date(s.date+"T12:00:00").toLocaleDateString("en-GB",{month:"short"})}</span>
-</div>)}</div><details className="chart-data"><summary>View net-worth data</summary><p>Older cash records are preserved with their original definitions. Cash comparisons start from records with a consistent basis.</p><table><thead><tr><th>Date</th><th>Net worth</th><th>Cash after cards</th><th>Investment ISA</th><th>Pension</th><th>Debt</th></tr></thead><tbody>{snapshots.map(snapshot=><tr key={snapshot.date}><td>{new Date(snapshot.date+"T12:00:00").toLocaleDateString("en-GB")}</td><td>{gbp.format(snapshot.netWorth)}</td><td>{comparableCash(snapshot)===undefined?"Legacy basis — not comparable":gbp.format(snapshot.cash)}</td><td>{snapshot.isa===undefined?"Not recorded":gbp.format(snapshot.isa)}</td><td>{gbp.format(snapshot.pension)}</td><td>{gbp.format(snapshot.debt)}</td></tr>)}</tbody></table></details></>:<div className="empty-state"><strong>No net-worth history yet</strong><span>Update an account balance to create this month&apos;s first snapshot.</span></div>}
+<span>{new Date(s.date+"T12:00:00").toLocaleDateString(locale,{month:"short"})}</span>
+</div>)}</div><details className="chart-data"><summary>View net-worth data</summary><p>Older cash records are preserved with their original definitions. Cash comparisons start from records with a consistent basis.</p><table><thead><tr><th>Date</th><th>Net worth</th><th>Cash after cards</th><th>Investment ISA</th><th>Pension</th><th>Debt</th></tr></thead><tbody>{snapshots.map(snapshot=><tr key={snapshot.date}><td>{new Date(snapshot.date+"T12:00:00").toLocaleDateString(locale)}</td><td>{gbp.format(snapshot.netWorth)}</td><td>{comparableCash(snapshot)===undefined?"Legacy basis — not comparable":gbp.format(snapshot.cash)}</td><td>{snapshot.isa===undefined?"Not recorded":gbp.format(snapshot.isa)}</td><td>{gbp.format(snapshot.pension)}</td><td>{gbp.format(snapshot.debt)}</td></tr>)}</tbody></table></details></>:<div className="empty-state"><strong>No net-worth history yet</strong><span>Update an account balance to create this month&apos;s first snapshot.</span></div>}
 </article>
           <article className="panel">
 <div className="panel-head">
@@ -218,7 +219,7 @@ export default function Home(props: HomeScreenPropsWithHealthHistory) {
 <span className="legend">
 <i className="income-dot"/>Salary paid <i className="spend-dot"/>Spending</span>
 </div>
-            <div className="bar-chart" role="img" aria-label="Salary paid and spending comparison">{monthly.map(([m,v])=>{const bounds=cycleBounds(m,payday,salaryDates);const startLabel=new Date(bounds.start+"T12:00:00").toLocaleDateString("en-GB",{day:"numeric",month:"short"});const endLabel=new Date(bounds.end+"T12:00:00").toLocaleDateString("en-GB",{day:"numeric",month:"short"});const live=m===currentCycleKey;const complete=props.cycleHasFullCoverage(m);return <div className={live?"month live-cycle":"month"} key={m} title={`${m}: salary paid ${gbp.format(v.salaryIncome)}, spending ${gbp.format(v.spend)} · ${live?"cycle in progress":complete?"complete coverage":"partial history"}`}>
+            <div className="bar-chart" role="img" aria-label="Salary paid and spending comparison">{monthly.map(([m,v])=>{const bounds=cycleBounds(m,payday,salaryDates);const startLabel=new Date(bounds.start+"T12:00:00").toLocaleDateString(locale,{day:"numeric",month:"short"});const endLabel=new Date(bounds.end+"T12:00:00").toLocaleDateString(locale,{day:"numeric",month:"short"});const live=m===currentCycleKey;const complete=props.cycleHasFullCoverage(m);return <div className={live?"month live-cycle":"month"} key={m} title={`${m}: salary paid ${gbp.format(v.salaryIncome)}, spending ${gbp.format(v.spend)} · ${live?"cycle in progress":complete?"complete coverage":"partial history"}`}>
 <div className="bars">
 <i className="income-bar" style={{height:`${Math.max(v.salaryIncome/maxMonth*180,3)}px`}}/>
 <i className="spend-bar" style={{height:`${Math.max(v.spend/maxMonth*180,3)}px`}}/>
