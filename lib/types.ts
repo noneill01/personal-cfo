@@ -76,6 +76,8 @@ export type UserProfile = {
 };
 
 export type Store = {
+  /** True only for the built-in fictional evaluation profile. */
+  demoMode?: boolean;
   profile?: UserProfile;
   onboarding?: OnboardingState;
   transactions: Tx[];
