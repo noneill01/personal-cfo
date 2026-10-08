@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Privacy reminder
+    url: https://github.com/noneill01/personal-cfo#privacy-and-local-data
+    about: Never attach real statements, backups, tax documents or account details to a public issue.
