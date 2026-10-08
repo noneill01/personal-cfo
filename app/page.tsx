@@ -36,8 +36,7 @@ import { migrateTaxStore } from "../lib/tax/index.ts";
 import { applyUserProfile, classifyConfiguredIncome, createFreshStore, migrateUserProfile, syncUserProfileInPlace } from "../lib/profile.ts";
 import { addSubcategory, categoryFor, categoryGroupFor, resolveCategory } from "../lib/categories.ts";
 import { hasRole } from "../lib/transaction-roles.ts";
-import { createDemoStore } from "../lib/demo.ts";
-import { useCategorySelectionSync } from "../lib/category-selection.ts";
+import { createDemoStore } from "../lib/demo.ts"; import { useCategorySelectionSync } from "../lib/category-selection.ts";
 const gbp = new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP", maximumFractionDigits: 0 });
 const gbpExact = new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP", minimumFractionDigits: 2 });
 /**
@@ -1050,8 +1049,7 @@ export default function Home() {
   const emptyFreshView=store.profile?.origin==="fresh"&&!store.balances.some(balance=>balance.asOf)&&!store.transactions.length&&!store.taxDocuments?.length&&!store.taxFacts?.length;
   const setupStep=!store.onboarding||store.onboarding.status==="completed"?setupEditStep:store.onboarding.step;
   const changeSetupStep=(step:import("../lib/types").OnboardingStep)=>{if(!store.onboarding||store.onboarding.status==="completed")setSetupEditStep(step);else setStore(current=>setOnboardingStep(current,step))};
-  const loadDemoProfile=()=>{setStore(createDemoStore());setSetupOpen(false);setSetupDismissed(true);setTab("Overview");setNotice("Fictional demo data loaded. Explore freely, then choose Start with my data when you are ready.");setTimeout(()=>setNotice(""),5200)};
-  const leaveDemoProfile=()=>{setStore(createFreshStore());setTab("Overview");setSetupDismissed(false);setSetupEditStep("welcome");setSetupOpen(true);setNotice("")};
+  const loadDemoProfile=()=>{setStore(createDemoStore());setSetupOpen(false);setSetupDismissed(true);setTab("Overview");setNotice("Fictional demo data loaded. Explore freely, then choose Start with my data when you are ready.");setTimeout(()=>setNotice(""),5200)};const leaveDemoProfile=()=>{setStore(createFreshStore());setTab("Overview");setSetupDismissed(false);setSetupEditStep("welcome");setSetupOpen(true);setNotice("")};
   if(!hydrated&&storageError)return <div className="app-loading" role="alert"><h1>Saved data needs attention</h1><p>{storageError}</p><button onClick={()=>location.reload()}>Try again</button><button onClick={()=>{const raw=localStorage.getItem(INDEXED_DB_MIGRATION_BACKUP_KEY)??discoverLocalFinanceStore(localStorage)?.raw;if(raw){const url=URL.createObjectURL(new Blob([raw],{type:"application/json"}));const a=document.createElement("a");a.href=url;a.download="personal-cfo-recovery.json";a.click();URL.revokeObjectURL(url)}}}>Download saved data</button></div>;
   if(!hydrated)return <div className="app-loading" role="status" aria-live="polite">
 <div className="brand-mark">P</div>
