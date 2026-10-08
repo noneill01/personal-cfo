@@ -1,0 +1,24 @@
+P45 Part 1
+Details of employee leaving work
+1 Surname
+EXAMPLE
+2 Forenames or initials
+ALEX
+Employer's PAYE reference
+123/FA456
+Date of leaving DD MM YYYY
+21 08 2026
+Tax code at leaving date
+2461T
+7 Total pay to date
+Total tax to date
+£ p
+70000 00
+18000 00
+8 Total pay in this employment
+Total tax in this employment
+£ p
+35000 00
+7500 00
+Employer's name
+Example Software Limited

@@ -1,0 +1,65 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/node_modules 2/
+/node_modules 3
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+/.local-service/
+
+# next.js
+/.next/
+/.vinext/
+/out/
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files (can opt-in for committing if needed)
+.env*
+
+# vercel
+.vercel
+
+# typescript
+next-env.d.ts
+tsconfig.tsbuildinfo
+/dist/
+/.wrangler/
+/outputs/
+/work/
+next.config 2.mjs
+
+# Private financial information. Keep it local and out of every Git commit.
+/public/data/*.json
+!/public/data/README.md
+/public/app-version.json
+/imports/
+/backups/
+/exports/
+/private-data/
+*.csv
+*.pdf
+*.xlsx
+*.xls
+*.zip
+
+# Local runtime, browser exports and operating-system state
+/.sites-runtime/
+.local-finance/

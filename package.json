@@ -1,0 +1,43 @@
+{
+  "name": "personal-cfo",
+  "version": "0.1.0",
+  "description": "A private, local-first personal finance operating system.",
+  "private": true,
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "predev": "node scripts/generate-app-version.mjs",
+    "prebuild": "node scripts/generate-app-version.mjs",
+    "dev": "zsh scripts/run-local.command dev",
+    "build": "vinext build",
+    "start": "zsh scripts/run-local.command start",
+    "start:local": "zsh scripts/run-local.command start",
+    "typecheck": "tsc --noEmit",
+    "test": "pnpm run typecheck && pnpm run build && node --experimental-strip-types --test tests/*.test.mjs",
+    "test:logic": "node --experimental-strip-types --test tests/*.test.mjs",
+    "release:check": "node scripts/release-gate.mjs",
+    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next"
+  },
+  "dependencies": {
+    "next": "16.3.8",
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "4.2.1",
+    "@types/node": "22.19.19",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "6.0.2",
+    "@vitejs/plugin-rsc": "0.5.35",
+    "eslint": "9.39.4",
+    "eslint-config-next": "16.3.8",
+    "react-server-dom-webpack": "19.3.0",
+    "tailwindcss": "4.2.1",
+    "typescript": "5.9.3",
+    "vinext": "1.0.1",
+    "vite": "8.3.2"
+  },
+  "type": "module"
+}
