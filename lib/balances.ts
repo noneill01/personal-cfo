@@ -51,6 +51,10 @@ export function cardDebtBalance(balances: Balance[]) {
   return roundedSum(balances, "liability", ["credit-card"]);
 }
 
+export function consumerDebtBalance(balances: Balance[]) {
+  return roundedSum(balances, "liability", ["loan"]);
+}
+
 export function cashAfterCardDebt(balances: Balance[]) {
   return Math.round((cashBalance(balances) - cardDebtBalance(balances)) * 100) / 100;
 }

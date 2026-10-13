@@ -500,19 +500,19 @@ test("cash after card debt excludes ISA investments", () => {
 test("financial health is directional and explains component movement", () => {
   const previous = { cashProgress: 20, savingsRate: 12, debtRatio: 49 };
   const current = { cashProgress: 28, savingsRate: 15, debtRatio: 47 };
-  const movement = explainHealthMovement(current, previous);
-  assert.equal(movement.score, calculateHealthScore(current));
+  const movement = explainHealthMovement(current, previous,3);
+  assert.equal(movement.score, calculateHealthScore(current,3));
   assert.equal(movement.direction, "improving");
   assert.ok(movement.change > 0);
   assert.ok(movement.movements.some(component => component.change > 0));
 });
 
-test("financial health v3 has the published 0–100 meaning", () => {
-  assert.equal(HEALTH_SCORE_VERSION, 3);
-  assert.equal(calculateHealthScore({ cashProgress: 0, savingsRate: 0, cashFlowMargin: 0, debtRatio: 0 }), 40);
-  assert.equal(calculateHealthScore({ cashProgress: 0, savingsRate: 0, cashFlowMargin: -20, debtRatio: 0 }), 25);
-  assert.equal(calculateHealthScore({ cashProgress: 100, savingsRate: 20, cashFlowMargin: 20, debtRatio: 0 }), 100);
-  const reserve = healthComponents({ cashProgress: 72, savingsRate: 0, cashFlowMargin: 0, debtRatio: 75 }).find(component => component.key === "cash");
+test("financial health v3 remains reproducible after V4", () => {
+  assert.equal(HEALTH_SCORE_VERSION, 4);
+  assert.equal(calculateHealthScore({ cashProgress: 0, savingsRate: 0, cashFlowMargin: 0, debtRatio: 0 },3), 40);
+  assert.equal(calculateHealthScore({ cashProgress: 0, savingsRate: 0, cashFlowMargin: -20, debtRatio: 0 },3), 25);
+  assert.equal(calculateHealthScore({ cashProgress: 100, savingsRate: 20, cashFlowMargin: 20, debtRatio: 0 },3), 100);
+  const reserve = healthComponents({ cashProgress: 72, savingsRate: 0, cashFlowMargin: 0, debtRatio: 75 },3).find(component => component.key === "cash");
   assert.equal(reserve?.points, 25.2);
 });
 

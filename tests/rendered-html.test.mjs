@@ -114,8 +114,8 @@ test("keeps health scoring, pay cycles and imported identities in pure modules",
   const health = await source("../lib/health.ts");
   const cycles = await source("../lib/pay-cycles.ts");
   const transactions = await source("../lib/transactions.ts");
-  assert.match(health, /HEALTH_SCORE_VERSION = 3/);
-  assert.match(health, /function versionThreeComponents/);
+  assert.match(health, /HEALTH_SCORE_VERSION = 4/);
+  assert.match(health, /function assessFinancialHealth/);
   assert.match(health, /function assessHealthReadiness/);
   assert.match(cycles, /function expectedPayDate/);
   assert.match(cycles, /const safePayday/);

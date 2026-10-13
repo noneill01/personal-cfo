@@ -7,7 +7,7 @@ import type { HomeScreenPropsWithHealthHistory } from "../lib/screen-props";
 
 export default function Home(props: HomeScreenPropsWithHealthHistory) {
   const {review:reviewCategory,reviewSubcategory}=props.categoryLabels;
-  const { overviewCycleTransactions, balancesAsOf, allocationGradient, assetMix, cashProgress, cfoAttentionItems, currentCycleDataState, currentCycleKey, cycleAnnotations, cycleBounds, cycleKeys, cycleLabel, gbp, healthHistoryDisplay, healthMovement, healthReadiness, healthScore, homeChangeSummary, kpis, latestCategorySpend, latestCycleKey, latestDataCycleKey, latestNeedsReview, latestOverPlan, latestRepeatedSmallSpend, maxMonth, maxSnapshot, mixColours, monthly, monthlyFocus, netGrowth, overviewCategorySpend, overviewCycle, overviewCycleKey, overviewDataState, overviewExcludedMovements, overviewFlexibleSpend, overviewFlowReady, overviewIncome, overviewMustPay, overviewMustPayTransactions, overviewNeedsReview, overviewSavings, overviewSavingsBreakdown, overviewSavingsRate, overviewSpending, overviewSpendingTreatments, overviewUnderlyingSpending, overviewUnallocated, payday, planRows, salaryDates, setBudgetCycle, setCategory, setDetailKey, setOverviewCycle, setPeriod, setQuery, setSubcategoryFilter, setTab, setTxView, snapshots, tab, topFocusCategory, totals } = props;
+  const { overviewCycleTransactions, balancesAsOf, allocationGradient, assetMix, cashProgress, cfoAttentionItems, currentCycleDataState, currentCycleKey, cycleAnnotations, cycleBounds, cycleKeys, cycleLabel, gbp, healthAssessment, healthHistoryDisplay, healthMovement, healthReadiness, healthScore, homeChangeSummary, kpis, latestCategorySpend, latestCycleKey, latestDataCycleKey, latestNeedsReview, latestOverPlan, latestRepeatedSmallSpend, maxMonth, maxSnapshot, mixColours, monthly, monthlyFocus, netGrowth, overviewCategorySpend, overviewCycle, overviewCycleKey, overviewDataState, overviewExcludedMovements, overviewFlexibleSpend, overviewFlowReady, overviewIncome, overviewMustPay, overviewMustPayTransactions, overviewNeedsReview, overviewSavings, overviewSavingsBreakdown, overviewSavingsRate, overviewSpending, overviewSpendingTreatments, overviewUnderlyingSpending, overviewUnallocated, payday, planRows, salaryDates, setBudgetCycle, setCategory, setDetailKey, setOverviewCycle, setPeriod, setQuery, setSubcategoryFilter, setTab, setTxView, snapshots, tab, topFocusCategory, totals } = props;
   const locale=gbp.resolvedOptions().locale;
   const currentAnnotation=cycleAnnotations[currentCycleKey];
   const movement=savingsTotals(overviewCycleTransactions);
@@ -37,7 +37,7 @@ export default function Home(props: HomeScreenPropsWithHealthHistory) {
 <div className="home-cycle-state" aria-hidden="true">{currentCycleDataState==="complete"?"✓":currentCycleDataState==="partial"?"◐":"…"}</div>
 <div className="home-cycle-copy"><span className="insight-label">CURRENT PAY CYCLE</span><strong>{cycleLabel(currentCycleKey,payday,salaryDates)}</strong><small>{currentCycleDataState==="complete"?"Complete and ready to review":currentCycleDataState==="partial"?"Live — spending is still arriving":"Waiting for bank activity"}</small></div>
 {currentAnnotation&&currentAnnotation.kind!=="Normal"&&<div className="home-cycle-annotation"><span>{currentAnnotation.kind}</span><strong>{currentAnnotation.title||currentAnnotation.kind}</strong>{currentAnnotation.excludeFromBaseline&&<small>Excluded from normal comparisons</small>}</div>}
-<button className="home-health-chip" onClick={()=>setDetailKey("health")} aria-label={healthReadiness.ready?`View Financial Health Score details: ${healthScore} out of 100, ${healthMovement.direction}`:"View Financial Health Score setup requirements"}><span>Health</span><strong>{healthReadiness.ready?healthScore:"—"}</strong><small>{healthReadiness.ready?healthReadiness.confidence:healthReadiness.confidence}</small></button>
+<button className="home-health-chip" onClick={()=>setDetailKey("health")} aria-label={healthReadiness.ready?`View Financial Health Score details: ${healthScore} out of 100, ${healthAssessment.status}`:"View Financial Health Score setup requirements"}><span>Health</span><strong>{healthReadiness.ready?healthScore:"—"}</strong><small>{healthReadiness.ready?healthAssessment.provisional?"Provisional":healthAssessment.status:healthReadiness.confidence}</small></button>
 <button className="text-button" onClick={()=>setTab("Monthly Review")}>Review cycle →</button>
 </section>
 
@@ -116,8 +116,8 @@ export default function Home(props: HomeScreenPropsWithHealthHistory) {
 <p>A board-level view of the five numbers that matter most</p>
 </div>
 <div className="score-summary">
-<i className={!healthReadiness.ready?"amber":healthScore>=80?"green":healthScore>=65?"amber":"orange"}/>
-<span>Financial health · {healthReadiness.ready?healthMovement.direction:healthReadiness.confidence}</span>
+<i className={!healthReadiness.ready?"amber":healthScore>=75?"green":healthScore>=60?"amber":"orange"}/>
+<span>Financial health · {healthReadiness.ready?`${healthAssessment.status} · ${healthMovement.direction}`:healthReadiness.confidence}</span>
 <strong>{healthReadiness.ready?`${healthScore}/100`:"—"}</strong>
 </div>
 </div>
@@ -143,24 +143,24 @@ export default function Home(props: HomeScreenPropsWithHealthHistory) {
 <div className="panel-head">
 <div>
 <h3>Financial Health Score history</h3>
-<p>V3 starts this month. Earlier scores remain visible as historical context, but are not directly comparable.</p>
+<p>V4 uses reserve coverage, completed-cycle cash flow and debt quality. Earlier versions remain historical context and are not directly comparable.</p>
 </div>
-<div className="health-current"><span>Data confidence</span><strong>{healthReadiness.confidence}</strong></div>
+<div className="health-current"><span>Data confidence</span><strong>{healthAssessment.confidence}</strong></div>
 </div>
 {!healthReadiness.ready?<div className="empty-state"><strong>Financial Health Score is waiting for complete data.</strong><span>{healthReadiness.message}</span></div>:<><div className="health-history-chart" role="img" aria-label={`Financial Health Score history from ${healthHistoryDisplay[0]?.score??healthScore} to ${healthScore} out of 100`}>{healthHistoryDisplay.map((point,index)=>
 <div className={`health-history-point version-${point.version}`} key={`${point.date}-${point.version}-${index}`} aria-label={`${new Date(point.date+"T12:00:00").toLocaleDateString(locale,{month:"long",year:"numeric"})}: ${point.score} out of 100, score version ${point.version}`} title={`${new Date(point.date+"T12:00:00").toLocaleDateString(locale,{day:"numeric",month:"long",year:"numeric"})}: ${point.score}/100 · v${point.version}${point.estimated?" (reconstructed from saved data)":""}`}>
 <strong>{point.score}</strong>
 <div>
-<i className={point.score>=80?"green":point.score>=65?"amber":"orange"} style={{height:`${Math.max(8,point.score*1.35)}px`}}/>
+<i className={point.score>=75?"green":point.score>=60?"amber":"orange"} style={{height:`${Math.max(8,point.score*1.35)}px`}}/>
 </div>
 <span>{new Date(point.date+"T12:00:00").toLocaleDateString(locale,{month:"short",year:"2-digit"})}</span>
-<small>{point.live?"Live · v3":point.estimated?`Reconstructed · v${point.version}`:`Saved · v${point.version}`}</small>
+<small>{point.live?"Live · v4":point.estimated?`Reconstructed · v${point.version}`:`Saved · v${point.version}`}</small>
 </div>)}</div>
 <details className="chart-data"><summary>View score data</summary><table><thead><tr><th>Date</th><th>Score</th><th>Version</th><th>Source</th></tr></thead><tbody>{healthHistoryDisplay.map((point,index)=><tr key={`${point.date}-${point.version}-${index}`}><td>{new Date(point.date+"T12:00:00").toLocaleDateString(locale)}</td><td>{point.score}/100</td><td>v{point.version}</td><td>{point.live?"Live":point.estimated?"Reconstructed":"Saved"}</td></tr>)}</tbody></table></details>
  </>}
 <div className="health-history-note">
 <i/>
-<span>{healthReadiness.ready?"V1 included a base score. V2 and V3 earn every point, but V3 rebalances debt, emergency cash and cash-flow behaviour. New snapshots store V3 exactly.":"A score appears only once balances and one complete pay cycle are recorded, so missing information cannot look like a healthy zero-debt position."}</span>
+<span>{healthReadiness.ready?`${healthAssessment.summary} ${healthAssessment.source.label?`Behaviour uses ${healthAssessment.source.label}.`:""}`:"A score appears only when accessible reserve, a complete pay cycle and balance-based debt context are available."}</span>
 <button className="text-button" onClick={()=>setTab("Update")}>Save this month →</button>
 </div>
 </section>
