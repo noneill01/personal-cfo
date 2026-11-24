@@ -17,6 +17,7 @@ export default function Home(props:HomeScreenPropsWithHealthHistory & {resetAcco
   const act=(item:typeof attention[number])=>{
     if(item.key==='data')props.setTab('Monthly Review');
     else if(item.key==='review')activity('Spending',props.categoryLabels.review);
+    else if(item.key==='spending-trend'){activity('Spending');setTimeout(()=>document.getElementById('spending-changes')?.scrollIntoView({behavior:'smooth'}),0);}
     else {props.setBudgetCycle(period.key);props.setTab('Budget');}
   };
   const low=Math.min(...trend.map(p=>p.netWorth),0),high=Math.max(...trend.map(p=>p.netWorth),1);

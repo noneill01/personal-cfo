@@ -4,8 +4,9 @@ import { legacyTransactionRole } from "./transaction-roles.ts";
 import { baselineMortgagePlanner } from "./mortgage.ts";
 import type { Store, Tx, UserProfile } from "./types.ts";
 import { DEFAULT_REGION, normaliseRegion } from "./region.ts";
+import { seedSpendingNatures } from "./spending-nature.ts";
 
-export const USER_PROFILE_VERSION = 7;
+export const USER_PROFILE_VERSION = 8;
 export const defaultAccountCoverage = (kind: UserProfile["accounts"][number]["kind"]) => kind === "current" || kind === "credit-card" ? "required" as const : "excluded" as const;
 
 // Profile owns identity, classification and planning configuration. The old
@@ -69,7 +70,7 @@ export function profileFromStore(store: Store, origin: UserProfile["origin"]): U
     goals: store.goals.map(({ id, name, target, colour }) => ({ id, name, target, colour })),
     ...(store.payday === undefined && !(store.paydayRules?.length) ? {} : { paySchedule: { payday: store.payday ?? 28, rules: store.paydayRules ?? [] } }),
     merchantRules: (store.merchantRules ?? []).map(rule => ({ ...rule })),
-    categories,
+    categories: seedSpendingNatures(categories),
     customSubcategories: Object.fromEntries(Object.entries(store.customSubcategories ?? {}).map(([category, items]) => [category, [...items]])),
     ...(store.planningIncome || Object.keys(store.budgetPlan ?? {}).length ? { planning: { income: store.planningIncome ?? 0, budgetPlan: { ...(store.budgetPlan ?? {}) } } } : {}),
   };
@@ -79,6 +80,9 @@ export function profileFromStore(store: Store, origin: UserProfile["origin"]): U
 export function migrateUserProfile(store: Store, origin: UserProfile["origin"] = "legacy"): Store {
   if (store.profile && store.profile.version >= USER_PROFILE_VERSION && store.profile.categories && store.profile.region) return store;
   const existing = store.profile;
+  if (existing && existing.version >= 7 && existing.categories && existing.region) {
+    return { ...store, profile: { ...existing, version: USER_PROFILE_VERSION, categories: seedSpendingNatures(existing.categories) } };
+  }
   const baseline = profileFromStore(store, existing?.origin ?? origin);
   const profile: UserProfile = existing ? {
     ...baseline, ...existing, version: USER_PROFILE_VERSION,
@@ -98,6 +102,7 @@ export function migrateUserProfile(store: Store, origin: UserProfile["origin"] =
       ? { ...existing.paySchedule, rules: existing.paySchedule.rules }
       : baseline.paySchedule,
   } : baseline;
+  profile.categories = seedSpendingNatures(profile.categories ?? []);
   const transactions = store.transactions.map(item => {
     const resolved = resolveCategory(item, profile);
     const categoryId=item.categoryId??resolved.categoryId, subcategoryId=item.subcategoryId??resolved.subcategoryId;

@@ -2,6 +2,8 @@
 import { useState, type Dispatch, type SetStateAction } from "react";
 import { addCategory, addSubcategory, updateCategory, updateSubcategory } from "../lib/categories";
 import type { CategoryGroup, Store, TransactionRole } from "../lib/types";
+import SpendingNatureSelect from './SpendingNatureSelect';
+import { smallPurchaseThreshold } from '../lib/spending-nature';
 
 const groups: CategoryGroup[] = ["essential", "lifestyle", "future", "income", "transfer", "property", "work"];
 const roles:TransactionRole[]=["none","salary","rental-income","maintenance","savings-contribution","savings-challenge","bills-reserve","debt-repayment","transfer"];
@@ -29,17 +31,22 @@ export default function CategorySettings({store,setStore}:{store:Store;setStore:
       <label>Plan group<select aria-label="New category Plan group" value={group} onChange={event=>setGroup(event.target.value as CategoryGroup)}>{groups.map(value=><option key={value} value={value}>{value}</option>)}</select></label>
       <button className="ghost" onClick={()=>{const next=addCategory(categories,name,group);if(next!==categories){change(next);setName("")}}}>Add category</button>
     </div>
+    <p>Spending analysis is separate from Plan groups. Changing it never changes your budget or recorded spending.</p>
+    <label>Small everyday purchase threshold (base currency)<input type="number" min="0.01" step="0.01" value={smallPurchaseThreshold(store.profile)} onChange={event=>{const value=Number(event.target.value);if(Number.isFinite(value)&&value>0)setStore(current=>current.profile?{...current,profile:{...current.profile,spendingAnalysis:{smallPurchaseThreshold:value}}}:current)}}/></label>
+    <p>This is a configurable heuristic, not a spending limit. It does not adjust for exchange rates or purchasing power.</p>
     <div style={{display:"grid",gap:".8rem"}}>{categories.map(category=><details key={category.id} style={{border:"1px solid var(--line, #aaa)",borderRadius:12,padding:".8rem"}}>
       <summary style={{cursor:"pointer",fontWeight:700}}>{category.name} · {category.group}{category.enabled?"":" · archived"}</summary>
       <div style={{display:"flex",gap:".75rem",flexWrap:"wrap",alignItems:"end",marginTop:".8rem"}}>
         <label>Name<input aria-label={`Name for ${category.name}`} value={category.name} onChange={event=>change(updateCategory(categories,category.id,{name:event.target.value}))}/></label>
         <label>Plan group<select aria-label={`Plan group for ${category.name}`} value={category.group} onChange={event=>change(updateCategory(categories,category.id,{group:event.target.value as CategoryGroup}))}>{groups.map(value=><option key={value} value={value}>{value}</option>)}</select></label>
         <label><input type="checkbox" checked={category.enabled} onChange={event=>change(updateCategory(categories,category.id,{enabled:event.target.checked}))}/> Active</label>
+        <SpendingNatureSelect label={`Spending analysis for ${category.name}`} value={category.spendingNature} onChange={spendingNature=>change(updateCategory(categories,category.id,{spendingNature}))}/>
       </div>
       <div style={{display:"grid",gap:".5rem",marginTop:".8rem"}}>{category.subcategories.map(sub=><div key={sub.id} style={{display:"flex",gap:".75rem",alignItems:"center"}}>
         <input aria-label={`Subcategory ${sub.name} under ${category.name}`} value={sub.name} onChange={event=>change(updateSubcategory(categories,category.id,sub.id,{name:event.target.value}))}/>
         <select aria-label={`Financial role for ${sub.name} under ${category.name}`} value={sub.role??"none"} onChange={event=>change(updateSubcategory(categories,category.id,sub.id,{role:event.target.value as TransactionRole}))}>{roles.map(role=><option key={role} value={role}>{role}</option>)}</select>
         <label><input type="checkbox" checked={sub.enabled} onChange={event=>change(updateSubcategory(categories,category.id,sub.id,{enabled:event.target.checked}))}/> Active</label>
+        <SpendingNatureSelect inherit label={`Spending analysis for ${sub.name} under ${category.name}`} value={sub.spendingNature} onChange={spendingNature=>change(updateSubcategory(categories,category.id,sub.id,{spendingNature}))}/>
       </div>)}</div>
       <div style={{display:"flex",gap:".75rem",marginTop:".8rem"}}><input aria-label={`New subcategory under ${category.name}`} placeholder="New subcategory" value={subNames[category.id]??""} onChange={event=>setSubNames(current=>({...current,[category.id]:event.target.value}))}/><button className="ghost" onClick={()=>{const next=addSubcategory(categories,category.id,subNames[category.id]??"");if(next!==categories){change(next);setSubNames(current=>({...current,[category.id]:""}))}}}>Add subcategory</button></div>
     </details>)}</div>

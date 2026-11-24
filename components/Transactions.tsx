@@ -7,6 +7,7 @@ import { categoryFor, rentalCategoryFor } from "../lib/categories";
 import { useState } from "react";
 import SpendingChanges from "./SpendingChanges";
 import type { SpendingChange } from "../lib/spending-analysis";
+import SpendingNatureSelect from './SpendingNatureSelect';
 
 export default function Transactions(props: TransactionsScreenProps) {
   const { accountFilter, allBusinessExpenses, applyMerchantClassification, availableSubcategories, breakdownSpend, categories, category, coverage, currentCycleKey, cycleAnnotations, cycleBounds, cycleKeys, cycleLabel, displayedTransactions, filtered, gbp, gbpExact, income, inferSubcategory, isInternalPotTransfer, latestDataCycleKey, maxCategory, maxMonth, monthly, payday, period, periodTransactions, query, salaryDates, selectedBusinessExpenses, selectedPeriodLabel, setAccountFilter, setCategory, setNewSubcategory, setPeriod, setQuery, setSubcategoryDialog, setSubcategoryFilter, setTab, setTxLimit, setTxView, spending, spendingTreatmentFor, store, subcategoryFilter, subcategorySpend, tab, txLimit, txView, uncategorised, updateSpendingTreatment } = props;
@@ -182,6 +183,7 @@ export default function Transactions(props: TransactionsScreenProps) {
 </div>
 </div>
 {t.amount<0&&<label className={`treatment-control treatment-${treatment.toLowerCase().replace(/[^a-z]+/g,"-")}`}><span className="sr-only">Spending treatment for {t.merchant}</span><select aria-label={`Spending treatment for ${t.merchant}`} value={treatment} disabled={lockedTransfer||treatment==="Transfer / savings"} onChange={event=>updateSpendingTreatment(t.id,event.target.value as SpendingTreatment)}>{["Recurring","Normal variable","Planned one-off","Unplanned one-off","Reimbursable business","Transfer / savings"].map(option=><option key={option}>{option}</option>)}</select></label>}
+{!lockedTransfer&&treatment!=="Transfer / savings"&&<details><summary>Analysis preference</summary><SpendingNatureSelect inherit label={`Spending analysis override for ${t.merchant}`} value={t.spendingNature} onChange={value=>props.updateSpendingNature(t.id,value)}/><small>Only this record. Fixed commitments and accounting exclusions still apply.</small></details>}
 </div></div><strong className={t.amount>0?"activity-amount positive":"activity-amount"}>{t.amount>0?"+":""}{gbpExact.format(t.amount)}</strong>
 </div>
 </div>})}</div>{txLimit<recordRows.length&&<button className="load-more" onClick={()=>setTxLimit(n=>n+30)}>Show 30 more</button>}{!recordRows.length&&<div className="empty-transactions">

@@ -14,6 +14,27 @@ Personal CFO is an early public release. The core app is usable today, but some 
 
 ### Spending changes in Activity
 
+Everyday spending analysis distinguishes routine discretionary purchases from
+variable essentials, irregular discretionary costs, home/property costs and fixed
+commitments. A Plan group such as `lifestyle` does not determine behaviour. Repairs
+and travel therefore remain real spending without implying an everyday habit.
+Settings → Categories provides category/subcategory **Spending analysis** choices;
+an individual Activity record can override them under **Analysis preference**.
+Unknown categories start unclassified. Existing accounting exclusions and confirmed
+fixed commitments take precedence. No budget or Health Score formula is changed.
+
+Small everyday purchases use a configurable default threshold of **30 base-currency
+units** (Settings → Categories). This is a heuristic, not a recommended limit or
+currency conversion. Net totals include refunds, but purchase counts and average
+purchase size exclude refund credits; counts represent transactions, not visits.
+The small-purchase diagnostic shows gross purchase outlays separately. Category,
+subcategory and repeat-merchant comparisons expose the exact contributing records.
+The complete breakdown reconciles every genuine spend to a behavioural bucket,
+including property; work and non-spending movements retain existing exclusions.
+Profile version 8 adds classification configuration only; version 7 financial
+records, history, balances and planning values are retained unchanged. Backup
+round-trips retain preferences and transaction overrides.
+
 Below the transaction records, Spending changes compares the latest three completed,
 covered, baseline-eligible pay periods with the preceding three. Twelve eligible
 periods enable a six-versus-six view; two to five periods use equal smaller windows

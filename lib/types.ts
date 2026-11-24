@@ -2,13 +2,14 @@ import type { PensionTaxTreatment, TaxDocument, TaxFact } from "./tax/types.ts";
 import type { HealthInputs } from "./health.ts";
 
 export type SpendingTreatment = "Recurring" | "Normal variable" | "Planned one-off" | "Unplanned one-off" | "Reimbursable business" | "Transfer / savings";
+export type SpendingNature = 'routine-discretionary' | 'variable-essential' | 'irregular-discretionary' | 'home-property' | 'structural' | 'work' | 'non-spending' | 'unclassified';
 /** Runtime classification only. Balance.type remains the persisted legacy label. */
 export type AccountKind = "current" | "savings" | "cash-isa" | "investment-isa" | "investment" | "credit-card" | "mortgage" | "loan" | "pension" | "property" | "other";
 export type CategoryGroup = "essential" | "lifestyle" | "future" | "income" | "transfer" | "property" | "work";
 export type TransactionRole = "none" | "salary" | "rental-income" | "maintenance" | "savings-contribution" | "savings-challenge" | "bills-reserve" | "debt-repayment" | "transfer";
-export type SubcategoryConfig = { id: string; name: string; enabled: boolean; role?: TransactionRole };
-export type CategoryConfig = { id: string; name: string; group: CategoryGroup; enabled: boolean; subcategories: SubcategoryConfig[] };
-export type Tx = { originalDescription?: string; importedCategory?: string; importBatch?: string; fingerprint?: string; id: string; sourceId?: string; date: string; transactionTime?: string; merchant: string; reference?: string; category: string; categoryId?: string; categoryGroup?: CategoryGroup; subcategory?: string; subcategoryId?: string; role?: TransactionRole; amount: number; account: string; transactionType?: string; classificationOverride?: boolean; spendingTreatment?: SpendingTreatment };
+export type SubcategoryConfig = { id: string; name: string; enabled: boolean; role?: TransactionRole; spendingNature?: SpendingNature };
+export type CategoryConfig = { id: string; name: string; group: CategoryGroup; enabled: boolean; subcategories: SubcategoryConfig[]; spendingNature?: SpendingNature };
+export type Tx = { spendingNature?: SpendingNature; originalDescription?: string; importedCategory?: string; importBatch?: string; fingerprint?: string; id: string; sourceId?: string; date: string; transactionTime?: string; merchant: string; reference?: string; category: string; categoryId?: string; categoryGroup?: CategoryGroup; subcategory?: string; subcategoryId?: string; role?: TransactionRole; amount: number; account: string; transactionType?: string; classificationOverride?: boolean; spendingTreatment?: SpendingTreatment };
 export type Balance = { id: string; name: string; group: "asset" | "liability"; type: string; value: number; asOf?: string };
 export type CsvImportMapping = { version: 1; id: string; name: string; accountId: string; dateColumn: string; descriptionColumn: string; amountMode: "single" | "debit-credit"; amountColumn?: string; debitColumn?: string; creditColumn?: string; referenceColumn?: string; transactionTypeColumn?: string; categoryColumn?: string; balanceColumn?: string; dateFormat?: "UK" | "ISO" | "US"; spendingSign?: "negative" | "positive" };
 export type Goal = { id: string; name: string; target: number; current: number; colour: string };
@@ -56,6 +57,7 @@ export type RegionalConfig = { country: string; currency: string; locale: string
 
 /** Configuration only. Financial values and history stay in their existing stores. */
 export type UserProfile = {
+  spendingAnalysis?: { smallPurchaseThreshold: number };
   version: number;
   origin: "fresh" | "legacy";
   region: RegionalConfig;

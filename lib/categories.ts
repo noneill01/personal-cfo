@@ -70,7 +70,7 @@ export function addCategory(categories: CategoryConfig[], name: string, group: C
   while (ids.has(id)) id = `${base}-${suffix++}`;
   return [...categories, { id, name: clean, group, enabled: true, subcategories: [] }];
 }
-export function updateCategory(categories: CategoryConfig[], id: string, patch: Partial<Pick<CategoryConfig, "name" | "group" | "enabled">>): CategoryConfig[] {
+export function updateCategory(categories: CategoryConfig[], id: string, patch: Partial<Pick<CategoryConfig, "name" | "group" | "enabled" | "spendingNature">>): CategoryConfig[] {
   const clean = patch.name?.trim();
   if (patch.name !== undefined && (!clean || categories.some(item => item.id !== id && item.name.toLowerCase() === clean.toLowerCase()))) return categories;
   return categories.map(item => item.id === id ? { ...item, ...patch, ...(clean ? { name: clean } : {}) } : item);
@@ -87,7 +87,7 @@ export function addSubcategory(categories: CategoryConfig[], categoryId: string,
     return { ...item, subcategories: [...item.subcategories, { id, name: clean, enabled: true }] };
   });
 }
-export function updateSubcategory(categories: CategoryConfig[], categoryId: string, id: string, patch: { name?: string; enabled?: boolean; role?: TransactionRole }): CategoryConfig[] {
+export function updateSubcategory(categories: CategoryConfig[], categoryId: string, id: string, patch: { name?: string; enabled?: boolean; role?: TransactionRole; spendingNature?: CategoryConfig['spendingNature'] }): CategoryConfig[] {
   const clean = patch.name?.trim();
   return categories.map(item => {
     if (item.id !== categoryId || (patch.name !== undefined && (!clean || item.subcategories.some(sub => sub.id !== id && sub.name.toLowerCase() === clean.toLowerCase())))) return item;
