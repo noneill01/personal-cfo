@@ -12,6 +12,32 @@ Personal CFO is an early public release. The core app is usable today, but some 
 
 ## Features
 
+### Spending changes in Activity
+
+Below the transaction records, Spending changes compares the latest three completed,
+covered, baseline-eligible pay periods with the preceding three. Twelve eligible
+periods enable a six-versus-six view; two to five periods use equal smaller windows
+and are labelled limited history. The live period is never used. Expand Evidence
+to see exact dates and exclusions. Click a result to inspect its exact transactions;
+Clear comparison restores the normal Activity records.
+
+The analysis separates normal variable spending, recurring costs and explicitly
+marked one-offs. It reuses personal-spending rules, nets refunds, and excludes
+transfers, savings movements, card repayments, reimbursable work and known rental
+activity. Confirmed recurring obligations are recognised without rewriting records.
+Missing payments are not proof of cancellation; irregular or seasonal payments can
+still require review. Large unmarked payments are flagged, not automatically
+reclassified. Lower spending is not a claim that money was saved.
+
+Material changes must exceed 1% of the larger overall spending baseline for
+categories (0.5% for merchants) and 10% of their prior average. Percentage claims
+are suppressed near zero. Consistency requires three consecutive recent periods
+moving in the same direction, without a dominant payment or refund-driven reduction.
+These thresholds are currency-independent and centralised in `CHANGE_RULES`.
+All results are derived locally; no financial records or backup schemas change.
+
+### Core capabilities
+
 - Configurable current, savings, credit-card, mortgage, loan, investment, pension and property accounts
 - Native import adapters for Monzo CSV and Barclaycard CSV/PDF
 - Provider-neutral Generic CSV import with reusable column mappings
@@ -29,6 +55,14 @@ Personal CFO is an early public release. The core app is usable today, but some 
 Personal CFO uses one base currency per profile and does not perform currency conversion. It does **not** currently provide bank API syncing, Open Banking, cloud sync, multi-user accounts or hosted authentication.
 
 ## Quick start
+
+### Everyday workflow
+
+- **Home:** your recorded financial position, pay-period totals, next action and net-worth trend. Detailed analysis remains expandable.
+- **Activity:** search and filter records, then open **Details & edit** for categories, notes and transaction treatment.
+- **Plan:** edit income, essential commitments, flexible spending and savings allowances. Current/next-period selection changes scheduled commitments; allowances carry forward until edited.
+- **Review:** complete the outstanding checks, inspect the summary and close a finished period with a backup.
+- **Settings:** accounts, payroll, recurring payments, imports and **Backup & privacy**. Use **Add data** from any screen for routine updates.
 
 ### Requirements
 
@@ -114,6 +148,16 @@ The Generic CSV mapper supports:
 - optional reference, transaction type, source category and running balance
 
 Mappings are saved locally and included in backups. Imports are previewed before commit, and malformed rows are reported rather than silently becoming zero-value transactions.
+
+## Your monthly review
+
+Open **Monthly Review** and choose the completed pay cycle. Its focused workspaces let you import account statements, add or check a payslip, update dated balances, review unclear or one-off spending, and adjust the next spending plan without leaving the review. Closing a cycle saves its summary, a balance snapshot and a downloadable backup.
+
+A quiet week is not treated as missing transactions. If an export cannot establish the full period, check the account in your banking app and explicitly confirm the displayed interval. Imports with rejected rows still need correction.
+
+Spending is net of refunds assigned to expense categories; a refund arriving in a later cycle credits that later cycle. Transfers, savings movements, card repayments and work reimbursements keep their separate meanings. Cash Runway compares the spending allowance once against purchases and refunds, while actual current cash changes when card payments leave the account.
+
+The Health Score retains V4's weights and distinguishes missing balance evidence from a recorded zero. Its confidence also considers the age of the cash, debt and property balances it uses. Transaction account/search/category filters apply to the accompanying totals; activity tabs control which rows are shown.
 
 ## Privacy and local data
 

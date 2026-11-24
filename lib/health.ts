@@ -1,3 +1,6 @@
+import { accountKind } from "./balances.ts";
+import type { AccountKind, Store } from "./types.ts";
+
 /** A stored score retains the rules that produced it. Historical versions are never rewritten. */
 export const HEALTH_SCORE_VERSION = 4 as const;
 export type HealthScoreVersion = 1 | 2 | 3 | typeof HEALTH_SCORE_VERSION;
@@ -7,6 +10,7 @@ export type HealthInputs = {
   creditCardDebt?: number; consumerDebt?: number; mortgageDebt?: number; propertyAssets?: number;
   hasBalanceData?: boolean; sourcePeriod?: string; sourcePeriodLabel?: string; sourcePeriodComplete?: boolean;
   sourcePeriodStale?: boolean; balancesAsOf?: string; balanceDataStale?: boolean;
+  hasReserveData?: boolean; hasDebtData?: boolean; missingBalanceAccounts?: string[]; staleBalanceAccounts?: string[];
 };
 export type HealthComponentKey = "cash" | "savings" | "cashflow" | "debt";
 export type HealthComponent = {
@@ -43,6 +47,28 @@ function piecewise(value: number, points: readonly [number, number][]) {
 }
 const rounded=(value:number)=>Math.round(value*10)/10;
 
+/** Health uses dated balance evidence, independently of transaction-import coverage. */
+const HEALTH_BALANCE_MAX_AGE: Partial<Record<AccountKind, number>> = { current:35, savings:90, "cash-isa":90, "credit-card":35, loan:120, mortgage:120, property:365 };
+const cashKinds:AccountKind[]=["current","savings","cash-isa"];
+const debtKinds:AccountKind[]=["credit-card","loan","mortgage"];
+const balanceDate=(value:string|undefined)=>Boolean(value&&/^\d{4}-\d{2}-\d{2}$/.test(value)&&!Number.isNaN(Date.parse(`${value}T12:00:00Z`))&&new Date(`${value}T12:00:00Z`).toISOString().slice(0,10)===value);
+export function healthBalanceEvidence(store:Pick<Store,"balances"|"profile">,today:string) {
+  const configs=new Map(store.profile?.accounts.map(account=>[account.id,account])??[]);
+  const accounts=new Map([...store.balances.map(balance=>[balance.id,{id:balance.id,name:balance.name,kind:accountKind(balance)}] as const),...[...configs].map(([id,account])=>[id,account] as const)]);
+  const evidence=[...accounts.values()].filter(account=>HEALTH_BALANCE_MAX_AGE[account.kind]!==undefined).map(account=>{
+    const balance=store.balances.find(item=>item.id===account.id),dated=balanceDate(balance?.asOf);
+    // An untouched zero placeholder is not evidence that an account has no balance.
+    const recorded=Boolean(balance&&Number.isFinite(balance.value)&&(dated||balance.value!==0));
+    const age=dated?(Date.parse(`${today}T12:00:00Z`)-Date.parse(`${balance!.asOf}T12:00:00Z`))/86400000:Infinity;
+    return {...account,balance,recorded,stale:recorded&&(!dated||age<0||age>HEALTH_BALANCE_MAX_AGE[account.kind]!)};
+  });
+  const allRecorded=(kinds:AccountKind[])=>evidence.filter(item=>kinds.includes(item.kind)).every(item=>item.recorded);
+  const total=(kinds:AccountKind[])=>allRecorded(kinds)?Math.round(evidence.filter(item=>kinds.includes(item.kind)).reduce((sum,item)=>sum+(item.balance?.value??0),0)*100)/100:undefined;
+  const cash=evidence.filter(item=>cashKinds.includes(item.kind));
+  const dates=evidence.filter(item=>item.recorded&&balanceDate(item.balance?.asOf)).map(item=>item.balance!.asOf!).sort();
+  return {accessibleCash:total(cashKinds),creditCardDebt:total(["credit-card"]),consumerDebt:total(["loan"]),mortgageDebt:total(["mortgage"]),propertyAssets:total(["property"]),hasBalanceData:evidence.some(item=>item.recorded),hasReserveData:cash.length>0&&allRecorded(cashKinds),hasDebtData:evidence.length>0&&allRecorded(debtKinds),balancesAsOf:dates[0],balanceDataStale:evidence.some(item=>item.stale),missingBalanceAccounts:evidence.filter(item=>!item.recorded).map(item=>item.name),staleBalanceAccounts:evidence.filter(item=>item.stale).map(item=>item.name)};
+}
+
 function versionOneComponents(inputs: HealthInputs): HealthComponent[] {
   const cashProgress=inputs.cashProgress??0,savingsRate=inputs.savingsRate??0,debtRatio=inputs.debtRatio??0;
   return [
@@ -70,7 +96,7 @@ function versionThreeComponents(inputs: HealthInputs): HealthComponent[] {
 }
 
 function reserveComponent(inputs:HealthInputs):HealthComponent {
-  if(!finite(inputs.accessibleCash)||!finite(inputs.essentialMonthlySpend)||inputs.essentialMonthlySpend<=0)return {key:"cash",label:"Accessible reserve",points:0,available:HEALTH_V4_WEIGHTS.reserve,dataAvailable:false,status:"missing",explanation:"Add accessible cash and a monthly essentials plan.",riskFactors:["Emergency reserve coverage is not yet measurable."],actions:["Record cash balances and planned essential spending."]};
+  if(inputs.hasReserveData===false||!finite(inputs.accessibleCash)||!finite(inputs.essentialMonthlySpend)||inputs.essentialMonthlySpend<=0)return {key:"cash",label:"Accessible reserve",points:0,available:HEALTH_V4_WEIGHTS.reserve,dataAvailable:false,status:"missing",explanation:"Add accessible cash and a monthly essentials plan.",riskFactors:["Emergency reserve coverage is not yet measurable."],actions:["Record cash balances and planned essential spending."]};
   const months=Math.max(0,inputs.accessibleCash)/inputs.essentialMonthlySpend,points=rounded(piecewise(months,RESERVE_POINTS));
   return {key:"cash",label:"Accessible reserve",points,available:HEALTH_V4_WEIGHTS.reserve,dataAvailable:true,status:months>=3?"strong":months>=1?"watch":"risk",explanation:`Accessible cash covers ${months.toFixed(1)} months of essential spending.`,positiveFactors:months>=3?["At least three months of essential spending is accessible."]:[],riskFactors:months<1?["Accessible cash covers less than one month of essentials."]:months<3?["Reserve coverage is below three months."]:[],actions:months<3?["Build accessible cash toward three months of essential spending."]:[]};
 }
@@ -80,7 +106,7 @@ function cashFlowComponent(inputs:HealthInputs):HealthComponent {
   return {key:"cashflow",label:"Sustainable cash flow",points,available:HEALTH_V4_WEIGHTS.cashFlow,dataAvailable:true,status:margin>=10?"strong":margin>=0?"watch":"risk",explanation:`The completed-cycle cash-flow margin is ${margin.toFixed(1)}%.`,positiveFactors:[...(margin>=10?["Income exceeded spending by a sustainable margin."]:[]),...(saving>0?[`${saving.toFixed(1)}% of income moved to savings or investments.`]:[])],riskFactors:margin<0?[`Spending exceeded income by ${Math.abs(margin).toFixed(1)}%.`]:margin<5?["The completed cycle left little room for disruption."]:[],actions:margin<0?["Bring recurring and flexible spending back below reliable income."]:margin<10?["Protect more of each completed cycle as surplus."]:[]};
 }
 function debtComponent(inputs:HealthInputs):HealthComponent {
-  if(!inputs.hasBalanceData||!finite(inputs.monthlyIncome)||inputs.monthlyIncome<=0)return {key:"debt",label:"Debt quality & burden",points:0,available:HEALTH_V4_WEIGHTS.debt,dataAvailable:false,status:"missing",explanation:"Current balances and reliable income are required.",riskFactors:["Debt burden is not yet measurable."],actions:["Record current balances and complete an income cycle."]};
+  if(!inputs.hasBalanceData||inputs.hasDebtData===false||!finite(inputs.creditCardDebt)||!finite(inputs.consumerDebt)||!finite(inputs.mortgageDebt)||!finite(inputs.monthlyIncome)||inputs.monthlyIncome<=0)return {key:"debt",label:"Debt quality & burden",points:0,available:HEALTH_V4_WEIGHTS.debt,dataAvailable:false,status:"missing",explanation:"Recorded debt balances and reliable income are required; missing balances are not assumed to be zero.",riskFactors:["Debt burden is not yet measurable."],actions:["Record current balances and complete an income cycle."]};
   const income=inputs.monthlyIncome,card=Math.max(0,inputs.creditCardDebt??0),loan=Math.max(0,inputs.consumerDebt??0),mortgage=Math.max(0,inputs.mortgageDebt??0),property=Math.max(0,inputs.propertyAssets??0);
   const cardPoints=piecewise(card/income,CARD_DEBT_POINTS),loanPoints=piecewise(loan/(income*12),LOAN_DEBT_POINTS);
   const mortgageContextMissing=mortgage>0&&property<=0,mortgagePoints=mortgage===0?8:mortgageContextMissing?2:piecewise(mortgage/property,MORTGAGE_LTV_POINTS);
@@ -92,12 +118,12 @@ function versionFourComponents(inputs:HealthInputs){return [reserveComponent(inp
 export function assessFinancialHealth(inputs:HealthInputs):HealthAssessment {
   const components=versionFourComponents(inputs),missing=components.filter(component=>!component.dataAvailable).map(component=>component.label);
   const complete=!missing.length,rawScore=components.reduce((sum,component)=>sum+component.points,0),score=complete?Math.round(clamp(rawScore,0,100)):null;
-  const contextualGap=components.some(component=>component.riskFactors?.some(item=>item.includes("Property value is missing"))),stale=Boolean(inputs.balanceDataStale||inputs.sourcePeriodStale),provisional=complete&&(stale||contextualGap);
+  const contextualGap=Boolean(inputs.missingBalanceAccounts?.length)||components.some(component=>component.riskFactors?.some(item=>item.includes("Property value is missing"))),stale=Boolean(inputs.balanceDataStale||inputs.sourcePeriodStale),provisional=complete&&(stale||contextualGap);
   const status:HealthAssessment["status"]=score===null?"Insufficient data":score<40?"At risk":score<60?"Vulnerable":score<75?"Building":score<90?"Resilient":"Strong";
   const valid=components.filter(component=>component.dataAvailable),strongestFactor=[...valid].sort((a,b)=>b.points/b.available-a.points/a.available)[0],biggestRisk=[...valid].sort((a,b)=>a.points/a.available-b.points/b.available)[0];
   const confidence:HealthAssessment["confidence"]=score===null?"insufficient":provisional?"provisional":"complete";
   const summary=score===null?`Add ${missing.join(", ").toLowerCase()} before treating this as a financial-health score.`:provisional?`${status}, but some inputs are stale or incomplete.`:`${status}: ${strongestFactor?.label.toLowerCase()} is strongest; ${biggestRisk?.label.toLowerCase()} deserves the most attention.`;
-  return {version:4,score,status,confidence,provisional,summary,source:{period:inputs.sourcePeriod,label:inputs.sourcePeriodLabel,complete:Boolean(inputs.sourcePeriodComplete),stale,balancesAsOf:inputs.balancesAsOf},components,strongestFactor,biggestRisk,positiveFactors:components.flatMap(component=>component.positiveFactors??[]),riskFactors:[...components.flatMap(component=>component.riskFactors??[]),...(inputs.balanceDataStale?["Balance information is stale."]:[]),...(inputs.sourcePeriodStale?["The latest completed behavioural period is stale."]:[])],actions:components.flatMap(component=>component.actions??[]),missing};
+  return {version:4,score,status,confidence,provisional,summary,source:{period:inputs.sourcePeriod,label:inputs.sourcePeriodLabel,complete:Boolean(inputs.sourcePeriodComplete),stale,balancesAsOf:inputs.balancesAsOf},components,strongestFactor,biggestRisk,positiveFactors:components.flatMap(component=>component.positiveFactors??[]),riskFactors:[...components.flatMap(component=>component.riskFactors??[]),...(inputs.balanceDataStale?[inputs.staleBalanceAccounts?.length?`Balance information needs updating: ${inputs.staleBalanceAccounts.join(", ")}.`:"Balance information is stale."]:[]),...(inputs.missingBalanceAccounts?.length?[`Balance evidence is missing: ${inputs.missingBalanceAccounts.join(", ")}.`]:[]),...(inputs.sourcePeriodStale?["The latest completed behavioural period is stale."]:[])],actions:components.flatMap(component=>component.actions??[]),missing};
 }
 
 export function healthComponents(inputs:HealthInputs,version:HealthScoreVersion=HEALTH_SCORE_VERSION):HealthComponent[]{if(version===1)return versionOneComponents(inputs);if(version===2)return versionTwoComponents(inputs);if(version===3)return versionThreeComponents(inputs);return versionFourComponents(inputs)}

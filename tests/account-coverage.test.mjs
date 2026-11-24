@@ -121,3 +121,35 @@ test("overview account totals and freshness use kinds and dates, not bank names"
   const coverageSource=readFileSync(new URL("../lib/coverage.ts",import.meta.url),"utf8");
   assert.doesNotMatch(coverageSource,/Monzo|Barclaycard|Rental Lender|Primary Lender/);
 });
+
+test("a sparse full export does not invent missing history during quiet weeks",()=>{
+  const store=storeFor([account("bank-a","current")],[transaction("bank-a",days[0],"first"),transaction("bank-a",days.at(-1),"last")]);
+  store.imports=[{id:"full",accountId:"bank-a",fileName:"full.csv",importedAt:"2026-10-28T10:00:00Z",added:2,skipped:0,rejected:0,from:days[0],to:days.at(-1)}];
+  assert.deepEqual(configuredAccountCoverage(store).currentGaps,[]);assert.equal(status(store).complete,true);
+});
+
+test("explicit statement coverage supports a quiet account without inventing transaction dates",()=>{
+  const store=storeFor([account("bank-a","current")],[]);
+  store.imports=[{id:"statement",accountId:"bank-a",fileName:"statement.csv",importedAt:"2026-10-28T10:00:00Z",added:0,skipped:0,rejected:0,coverage:{from:days[0],through:days.at(-1)}}];
+  assert.equal(status(store).complete,true);assert.equal(configuredAccountCoverage(store).current[0].count,0);
+  const activityOnly={...store,imports:[{...store.imports[0],coverage:undefined,from:"2026-10-03",to:"2026-10-23"}]};
+  assert.equal(status(activityOnly).complete,false);
+});
+
+test("distinct disjoint import intervals remain unknown until a covering export or explicit review",()=>{
+  const store=storeFor([account("bank-a","current")],[transaction("bank-a",days[0],"first"),transaction("bank-a",days.at(-1),"last")]);
+  const batch=(id,from,to)=>({id,accountId:"bank-a",fileName:`${id}.csv`,importedAt:"2026-10-28T10:00:00Z",added:1,skipped:0,rejected:0,from,to});
+  store.imports=[batch("early",days[0],"2026-10-03"),batch("late","2026-10-23",days.at(-1))];
+  assert.deepEqual(configuredAccountCoverage(store).currentGaps,[{from:"2026-10-04",to:"2026-10-22"}]);assert.equal(status(store).complete,false);
+  assert.equal(status({...store,imports:[...store.imports,batch("replacement",days[0],days.at(-1))]}).complete,true);
+  const confirmed={...store,accountCoverageConfirmations:{[key]:{"bank-a":{from:days[0],through:days.at(-1),confirmedAt:"2026-10-28T12:00:00Z"}}}};
+  assert.equal(status(confirmed).complete,true);assert.equal(status(confirmed).accounts[0].hasGap,false);
+});
+
+test("current-account review can confirm a fully quiet period but cannot hide rejected rows",()=>{
+  const store=storeFor([account("bank-a","current")],[]);
+  store.accountCoverageConfirmations={[key]:{"bank-a":{from:days[0],through:days.at(-1),confirmedAt:"2026-10-28T12:00:00Z"}}};
+  assert.equal(status(store).complete,true);
+  store.imports=[{id:"bad",accountId:"bank-a",fileName:"bad.csv",importedAt:"2026-10-28T10:00:00Z",added:0,skipped:0,rejected:1,from:days[0],to:days.at(-1)}];
+  assert.equal(status(store).complete,false);
+});

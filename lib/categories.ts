@@ -42,6 +42,13 @@ export function categoryFor(profile: UserProfile | undefined, value: Pick<Tx, "c
   const id = typeof value === "string" ? undefined : value.categoryId;
   return profile?.categories?.find(item => item.id === id) ?? profile?.categories?.find(item => item.name === category) ?? profile?.categories?.find(item => item.id === legacyCategoryId(category));
 }
+
+/** An unset property category is not the generic Other category. */
+export function rentalCategoryFor(profile: UserProfile | undefined) {
+  const configured=profile?.propertyConfig?.rentalCategory?.trim();
+  return (configured ? categoryFor(profile,configured) : undefined)
+    ?? profile?.categories?.find(item=>item.group==="property"&&item.enabled);
+}
 export const categoryGroupFor = (profile: UserProfile | undefined, value: Pick<Tx, "category" | "categoryId"> | string): CategoryGroup => categoryFor(profile, value)?.group ?? legacyCategoryGroup(typeof value === "string" ? value : value.category);
 export const categoryNameFor = (profile: UserProfile | undefined, value: Pick<Tx, "category" | "categoryId"> | string) => categoryFor(profile, value)?.name ?? (typeof value === "string" ? value : value.category);
 

@@ -38,6 +38,31 @@ export function businessExpensePosition(transactions: Tx[]) {
 export const isExcludedFromSpending = (transaction: Tx) => ["debt-repayment","transfer","savings-contribution","savings-challenge","bills-reserve"].includes(transactionRole(transaction)) || isInternalPotTransfer(transaction) || isReimbursableBusinessExpense(transaction) || Boolean(transaction.categoryGroup&&["transfer","future","work"].includes(transaction.categoryGroup));
 export const isPayYourselfFirstMovement = (transaction: Tx) => ["savings-contribution","savings-challenge"].includes(transactionRole(transaction));
 
+/** Signed expense contribution: purchases add spending; expense-category refunds reduce it. */
+export function personalSpendingAmount(transaction: Tx) {
+  if (!Number.isFinite(transaction.amount) || isExcludedFromSpending(transaction) || isBusinessExpenseActivity(transaction)
+    || transaction.categoryGroup === "income" || transaction.category === "Income"
+    || ["salary", "rental-income"].includes(transactionRole(transaction))
+    || transaction.spendingTreatment === "Transfer / savings" || transaction.spendingTreatment === "Reimbursable business") return 0;
+  return -transaction.amount;
+}
+
+export const isPersonalSpendingRefund = (transaction: Tx) => transaction.amount > 0 && personalSpendingAmount(transaction) < 0;
+
+/** Keep negative totals: a refund of an earlier period is a spending credit, never new income. */
+export const personalSpendingTotal = (transactions: Tx[]) => Math.round(transactions.reduce((total, transaction) => total + personalSpendingAmount(transaction), 0) * 100) / 100;
+
+export function groupedPersonalSpending(transactions: Tx[], group: (transaction: Tx) => string = transaction => transaction.category) {
+  const totals: Record<string, number> = {};
+  for (const transaction of transactions) {
+    const amount = personalSpendingAmount(transaction);
+    if (amount === 0) continue;
+    const key = group(transaction);
+    totals[key] = (totals[key] ?? 0) + amount;
+  }
+  return Object.fromEntries(Object.entries(totals).map(([key, value]) => [key, Math.round(value * 100) / 100]));
+}
+
 /**
  * Net cash returned from genuine savings destinations during a period.
  * Deposits made in the same period reduce the amount shown as funding used;
@@ -71,9 +96,8 @@ export const spendingTreatmentFor = (transaction: Tx): SpendingTreatment => {
 };
 
 export const spendingTreatmentSummary = (transactions: Tx[]) => transactions
-  .filter(transaction => transaction.amount < 0 && !isExcludedFromSpending(transaction))
   .reduce<Record<Exclude<SpendingTreatment, "Transfer / savings" | "Reimbursable business">, number>>((summary, transaction) => {
     const treatment = spendingTreatmentFor(transaction);
-    if (treatment !== "Transfer / savings" && treatment !== "Reimbursable business") summary[treatment] += -transaction.amount;
+    if (treatment !== "Transfer / savings" && treatment !== "Reimbursable business") summary[treatment] = Math.round((summary[treatment] + personalSpendingAmount(transaction)) * 100) / 100;
     return summary;
   }, { "Recurring": 0, "Normal variable": 0, "Planned one-off": 0, "Unplanned one-off": 0 });

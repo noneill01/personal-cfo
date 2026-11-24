@@ -240,6 +240,55 @@ test("same-day employers survive import while aliases replace only the matching 
   assert.equal(mergeImportedPayslip(imported, { ...base, employer: "Northstar Systems Ltd", tax: 650 },aliases).length, 2);
 });
 
+test("corrected PDF employer replaces a unique same-file placeholder without adding salary", () => {
+  for (const employer of [undefined, "", "Payroll", "Company Payroll", "Unknown employer"]) {
+    const placeholder = { ...base, id: "misread-october", employer, employerId: taxEmployer(employer, "misread-october", aliases).id };
+    const otherEmployer = { ...base, id: "other-employer", employer: "Previous Systems", netPay: 1000 };
+    const otherMonth = { ...base, id: "earlier-month", employer: "Payroll", payDate: "2026-07-28" };
+    const existing = [placeholder, otherEmployer, otherMonth];
+    const before = structuredClone(existing);
+    const imported = mergeImportedPayslip(existing, { ...base, employer: "Northstar Systems Limited", tax: 650 }, aliases);
+    assert.equal(imported.length, existing.length);
+    const corrected = imported.find(row => row.id === placeholder.id);
+    assert.equal(corrected.employer, "Northstar Systems Limited");
+    assert.equal(corrected.tax, 650);
+    assert.equal(imported.filter(row => row.payDate === base.payDate).reduce((total, row) => total + row.netPay, 0), 4000);
+    assert.strictEqual(imported.find(row => row.id === otherEmployer.id), otherEmployer);
+    assert.strictEqual(imported.find(row => row.id === otherMonth.id), otherMonth);
+    assert.deepEqual(existing, before);
+  }
+});
+
+test("normal employer identity takes priority over placeholder recovery", () => {
+  const placeholder = { ...base, id: "unidentified", employer: "Payroll" };
+  const imported = mergeImportedPayslip([base, placeholder], { ...base, employer: "Northstar Systems Limited", tax: 650 }, aliases);
+  assert.equal(imported.length, 2);
+  assert.equal(imported.find(row => row.id === base.id).tax, 650);
+  assert.strictEqual(imported.find(row => row.id === placeholder.id), placeholder);
+});
+
+test("employer recovery does not guess between multiple placeholder records", () => {
+  const placeholders = ["Payroll", "Unknown employer"].map((employer, index) => ({ ...base, id: `unidentified-${index}`, employer }));
+  const imported = mergeImportedPayslip(placeholders, { ...base, employer: "Northstar Systems Limited" }, aliases);
+  assert.equal(imported.length, 3);
+  for (const prior of placeholders) assert.strictEqual(imported.find(row => row.id === prior.id), prior);
+});
+
+test("employer recovery requires a genuine incoming employer and exact source date and filename", () => {
+  const prior = { ...base, id: "unidentified", employer: "Payroll" };
+  for (const incoming of [
+    { ...base, employer: undefined },
+    { ...base, employer: "Company Payroll" },
+    { ...base, employer: "Unknown employer" },
+    { ...base, employer: "Northstar Systems Limited", fileName: "different.pdf" },
+    { ...base, employer: "Northstar Systems Limited", payDate: "2026-09-28" },
+  ]) {
+    const imported = mergeImportedPayslip([prior], incoming, aliases);
+    assert.equal(imported.length, 2);
+    assert.strictEqual(imported.find(row => row.id === prior.id), prior);
+  }
+});
+
 test("legacy payslips infer known employers from exact nearby salary deposits", () => {
   const unknown = [
     { ...base, id: "rapid-final", employer: undefined, employerId: undefined, payDate: "2026-08-26", netPay: 7200 },

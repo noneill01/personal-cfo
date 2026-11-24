@@ -54,7 +54,7 @@ export default function PlanCashRunway({
     </button>
     {expanded&&<div className="cash-runway-content">
       <div className="spend-pace-head">
-        <div><h3>Actual cash vs budget target</h3><p><b>Blue</b> is your reconstructed current-account balance. <b>Green</b> places known fixed bills on their expected collection dates, then paces the remaining variable-spending allowance across the cycle.</p></div>
+        <div><h3>Actual cash vs budget target</h3><p><b>Blue</b> is your reconstructed current-account balance. <b>Green</b> places known fixed bills on their expected collection dates, then paces the remaining variable-spending allowance. Card purchases use that allowance once; repayments move both cash lines when they leave your account. Refunds restore the allowance.</p></div>
         <label><span>Cycle</span><select aria-label="Cycle shown in cash runway chart" value={cycleKey} onChange={event=>setCycle(event.target.value)}>{cycleOptions.slice(0,12).map(key=><option value={key} key={key}>{cycleLabel(key)}</option>)}</select></label>
       </div>
       {!canPlot?<div className="spend-pace-empty"><strong>{!runway.hasBalanceAnchor?"Current-account balance needed":"No current-account activity imported for this cycle yet."}</strong><span>{!runway.hasBalanceAnchor?"Enter a dated balance for each current account in Settings before plotting cash.":"Upload the latest account transactions to plot this cash-runway view."}</span></div>:<>

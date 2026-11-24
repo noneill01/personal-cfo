@@ -32,9 +32,11 @@ test("server-renders the private finance dashboard", async () => {
 test("keeps the core working areas and transaction controls available", async () => {
   const page = await source("../app/page.tsx");
   const transactions = await source("../components/Transactions.tsx");
-  for (const label of ["Home", "Monthly Review", "Transactions", "Plan", "Tax", "Settings"]) {
-    assert.match(page, new RegExp(`label:"${label}"`));
-  }
+  const {navigationItems}=await import('../lib/presentation.ts');
+  assert.deepEqual(navigationItems.map(item=>item.label),['Home','Activity','Plan','Review','Settings','Tax']);
+  assert.equal(navigationItems.find(item=>item.label==='Activity').target,'Transactions');
+  assert.equal(navigationItems.find(item=>item.label==='Plan').target,'Budget');
+  assert.match(page,/navigationItems/);
   assert.match(transactions, /aria-label="Transaction account"/);
   assert.match(transactions, /aria-label="Search transactions by merchant or account"/);
   assert.match(transactions, /Credit card/);
@@ -138,4 +140,18 @@ test("keeps the controller and screens type-safe without suppression", async () 
     assert.match(screenSource, new RegExp(`export default function ${screen}`));
     assert.doesNotMatch(screenSource, /@ts-nocheck/);
   }
+});
+
+test("transaction classification controls stay visible without expanding each row", async () => {
+  const transactions = await source("../components/Transactions.tsx");
+  assert.match(transactions, /aria-label=\{`Edit details for \$\{t\.merchant\}`\}/);
+  assert.doesNotMatch(transactions, /<details className="row-edit">/);
+});
+
+test("keeps the 1p savings challenge directly discoverable from Plan", async () => {
+  const plan = await source("../components/Plan.tsx");
+  const savings = await source("../components/SavingsGoals.tsx");
+  assert.match(plan, /1p savings challenge & goals/);
+  assert.match(savings, /1p savings challenge/);
+  assert.match(savings, /useState\(true\)/);
 });

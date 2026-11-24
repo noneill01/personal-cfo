@@ -75,10 +75,17 @@ export function enrichPayslipTaxEvidence(payslip: PayslipRecord, raw: string, ta
     pensionTaxTreatment: evidence.pensionTaxTreatment };
 }
 
-/** Re-import replaces that employer's payslip only; another employer on the same day survives. */
+/** Re-import replaces that employer's payslip, or a uniquely identified earlier
+ * import whose employer was missing or misread as a payroll table heading.
+ */
 export function mergeImportedPayslip(existing: PayslipRecord[], incoming: PayslipRecord, aliases: readonly EmployerAlias[] = []) {
   const identity = (row: PayslipRecord) => row.employerId ?? taxEmployer(row.employer, row.id, aliases).id;
-  const prior = existing.find(row => row.payDate === incoming.payDate && identity(row) === identity(incoming));
+  const ambiguousEmployer = (name?: string) => !name?.trim() || /^(?:(?:company\s+)?payroll|unknown\s+employer)$/i.test(name.trim());
+  let prior = existing.find(row => row.payDate === incoming.payDate && identity(row) === identity(incoming));
+  if (!prior && !ambiguousEmployer(incoming.employer) && incoming.fileName.trim()) {
+    const candidates = existing.filter(row => row.payDate === incoming.payDate && row.fileName === incoming.fileName && ambiguousEmployer(row.employer));
+    if (candidates.length === 1) prior = candidates[0];
+  }
   const id = prior?.id ?? `payslip:${identity(incoming)}:${incoming.payDate}`;
   return [{ ...incoming, id }, ...existing.filter(row => row !== prior)].sort((a, b) => b.payDate.localeCompare(a.payDate));
 }

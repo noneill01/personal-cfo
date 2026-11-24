@@ -14,7 +14,7 @@ export type CsvImportMapping = { version: 1; id: string; name: string; accountId
 export type Goal = { id: string; name: string; target: number; current: number; colour: string };
 export type SinkingFund = { id: string; name: string; target: number; current: number; monthly: number; colour: string };
 export type Snapshot = { cashBasis?: "net-cash-v2" | "net-cash-v1" | "legacy-unknown"; grossCash?: number; cardDebt?: number; cashIsa?: number; accountBalances?: Balance[]; date: string; netWorth: number; cash: number; isa?: number; pension: number; debt: number; healthScore?: number; healthScoreVersion?: 1 | 2 | 3 | 4; healthInputs?: HealthInputs };
-export type ImportRecord = { id: string; fileName: string; importedAt: string; added: number; skipped: number; rejected?: number; issues?: string[]; warnings?: string[]; needsReview?: number; source?: "Monzo" | "Barclaycard" | "Generic CSV"; importerId?: string; accountId?: string; mappingId?: string; balanceUpdates?: Array<{accountId:string;from:number;to:number;asOf:string}>; from?: string; to?: string };
+export type ImportRecord = { id: string; fileName: string; importedAt: string; added: number; skipped: number; rejected?: number; issues?: string[]; warnings?: string[]; needsReview?: number; source?: "Monzo" | "Barclaycard" | "Generic CSV"; importerId?: string; accountId?: string; mappingId?: string; balanceUpdates?: Array<{accountId:string;from:number;to:number;asOf:string}>; from?: string; to?: string; coverage?: { from: string; through: string } };
 export type PayslipRecord = { id: string; fileName: string; employer?: string; employerId?: string; payDate: string; payPeriod?: { from: string; to: string }; salary: number; cashEarnings: number; taxablePay?: number; taxablePaySource?: "reported" | "estimated"; ytdTaxablePay?: number; ytdTaxPaid?: number; taxEvidence?: "reported" | "missing"; pensionTaxTreatment?: PensionTaxTreatment; tax: number; ni: number; netPay: number; employeePension: number; employerPension: number; espp: number; esppRefund?: number; annualLeavePayout?: number; rsuGain: number; rsuTaxCredit: number; taxCode: string };
 export type PayslipDraft = { fileName: string; employer?: string; taxablePay?: string; ytdTaxablePay?: string; ytdTaxPaid?: string; pensionTaxTreatment?: PensionTaxTreatment; payDate: string; salary: string; cashEarnings: string; tax: string; ni: string; netPay: string; employeePension: string; employerPension: string; espp: string; esppRefund: string; annualLeavePayout: string; rsuGain: string; rsuTaxCredit: string; taxCode: string };
 export type MerchantRule = { key: string; label: string; category: string; categoryId?: string; subcategory: string; subcategoryId?: string; role?: TransactionRole; updatedAt: string; effectiveFrom?: string };
@@ -40,7 +40,7 @@ export type PotPosition = { bills: number; savings: number; updatedAt?: string }
 export type MonzoBalanceTracking = { enabled: boolean; syncedThrough: string; updatedAt: string };
 export type SavingsChallengeTracking = { balance: number; syncedThrough: string; updatedAt: string };
 export type BalanceReconciliation = { id: string; reconciledAt: string; transactionsThrough: string; trackedBalance: number; actualBalance: number; difference: number; reason: string };
-export type CycleCloseout = { cycle: string; closedAt: string; income: number; personalSpend: number; rentalIncome: number; rentalMortgage: number; cashFlow: number; payYourselfFirst?: number; unallocated?: number; spendingPlan: number; planVariance: number; unreviewed: number; note: string; currentAccount: number; netWorth: number };
+export type CycleCloseout = { cycle: string; closedAt: string; income: number; personalSpend: number; rentalIncome: number; rentalMortgage: number; rentalOperatingSpend?: number; cashFlow: number; payYourselfFirst?: number; unallocated?: number; spendingPlan: number; planVariance: number; unreviewed: number; note: string; currentAccount: number; netWorth: number };
 export type CycleAnnotationKind = "Normal" | "Transition" | "Holiday" | "Home renovation" | "Bonus month" | "RSU vest" | "Large annual bill";
 export type CycleAnnotation = { kind: CycleAnnotationKind; title?: string; note?: string; excludeFromBaseline?: boolean };
 export type ReviewedSpendingSignal = { id: string; cycle: string; title: string; reviewedAt: string };
@@ -106,7 +106,7 @@ export type Store = {
   customSubcategories?: Record<string, string[]>;
   cardStatement?: CardStatementSummary;
   cardCoverageConfirmations?: Record<string, { through: string; confirmedAt: string }>;
-  accountCoverageConfirmations?: Record<string, Record<string, { through: string; confirmedAt: string }>>;
+  accountCoverageConfirmations?: Record<string, Record<string, { from?: string; through: string; confirmedAt: string }>>;
   directDebitHidden?: string[];
   directDebitSettings?: Record<string, DirectDebitSetting>;
   recurringCommitments?: RecurringCommitment[];

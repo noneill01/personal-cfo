@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { HEALTH_SCORE_VERSION, assessFinancialHealth, calculateHealthScore, healthComponents } from "../lib/health.ts";
+import { HEALTH_SCORE_VERSION, assessFinancialHealth, calculateHealthScore, healthBalanceEvidence, healthComponents } from "../lib/health.ts";
+import { createFreshStore } from "../lib/profile.ts";
 
 const healthy={accessibleCash:18_000,essentialMonthlySpend:3_000,monthlyIncome:6_000,cashFlowMargin:20,savingsRate:15,creditCardDebt:0,consumerDebt:0,mortgageDebt:0,propertyAssets:0,hasBalanceData:true,sourcePeriod:"2026-09",sourcePeriodLabel:"28 Sep – 27 Oct",sourcePeriodComplete:true,balancesAsOf:"2026-10-27"};
 const assess=(patch={})=>assessFinancialHealth({...healthy,...patch});
@@ -70,4 +71,56 @@ test("scores are bounded and healthy-input improvements are monotonic",()=>{
 test("historical V3 arithmetic remains versioned and reproducible",()=>{
   const legacy={cashProgress:0,savingsRate:0,cashFlowMargin:0,debtRatio:0};
   assert.equal(calculateHealthScore(legacy,3),40);assert.equal(calculateHealthScore({...legacy,cashFlowMargin:-20},3),25);assert.equal(healthComponents(legacy,3).reduce((sum,item)=>sum+item.available,0),100);
+});
+
+const evidenceStore=(accounts,balances)=>{const store=createFreshStore();return {...store,profile:{...store.profile,accounts},balances}};
+const configuredAccount=(id,kind)=>({id,name:`Example ${id}`,kind});
+const recordedBalance=(id,type,value=0,asOf="2026-10-27")=>({id,name:`Example ${id}`,type,value,asOf,group:["Credit card","Loan","Mortgage"].includes(type)?"liability":"asset"});
+
+test("omitted debt inputs never earn confirmed zero-debt points",()=>{
+  for(const field of ["creditCardDebt","consumerDebt","mortgageDebt"]){
+    const result=assess({[field]:undefined});
+    assert.equal(result.score,null,field);assert.equal(component(result,"debt").dataAvailable,false,field);
+  }
+});
+
+test("configured missing debt and untouched zero placeholders cannot masquerade as no debt",()=>{
+  const accounts=[configuredAccount("bank","current"),configuredAccount("card","credit-card")];
+  for(const balances of [[recordedBalance("bank","Current account",18_000)],[recordedBalance("bank","Current account",18_000),recordedBalance("card","Credit card",0,undefined)]]){
+    // Passing undefined invokes the fixture's default date, so explicitly remove it.
+    if(balances.length===2)delete balances[1].asOf;
+    const evidence=healthBalanceEvidence(evidenceStore(accounts,balances),"2026-10-27");
+    const result=assess(evidence);assert.equal(result.score,null);assert.equal(evidence.hasDebtData,false);assert.ok(evidence.missingBalanceAccounts.includes("Example card"));
+  }
+});
+
+test("dated zero debt is valid evidence and absent unconfigured account kinds are not required",()=>{
+  const accounts=[configuredAccount("bank","current"),configuredAccount("card","credit-card")];
+  const evidence=healthBalanceEvidence(evidenceStore(accounts,[recordedBalance("bank","Current account",18_000),recordedBalance("card","Credit card")]),"2026-10-27");
+  assert.equal(evidence.hasDebtData,true);assert.equal(evidence.consumerDebt,0);assert.equal(evidence.mortgageDebt,0);assert.equal(assess(evidence).confidence,"complete");
+  const currentOnly=healthBalanceEvidence(evidenceStore([accounts[0]],[recordedBalance("bank","Current account",18_000)]),"2026-10-27");
+  assert.equal(currentOnly.hasDebtData,true);assert.equal(assess(currentOnly).score,assess().score);
+  assert.equal(assess(healthBalanceEvidence(evidenceStore([],[]),"2026-10-27")).score,null);
+});
+
+test("all accessible reserves need balance evidence, independently of account activity coverage",()=>{
+  const accounts=[configuredAccount("bank","current"),configuredAccount("reserve","savings")];
+  const store=evidenceStore(accounts,[recordedBalance("bank","Current account",6_000)]);
+  const evidence=healthBalanceEvidence(store,"2026-10-27");
+  assert.equal(evidence.hasReserveData,false);assert.equal(evidence.accessibleCash,undefined);assert.equal(assess(evidence).score,null);
+});
+
+test("health freshness includes excluded savings and mortgage balances with metric-specific ages",()=>{
+  const accounts=[configuredAccount("bank","current"),{...configuredAccount("reserve","savings"),coverage:"excluded"},{...configuredAccount("home-loan","mortgage"),coverage:"excluded"},configuredAccount("home","property")];
+  const balances=[recordedBalance("bank","Current account",6_000),recordedBalance("reserve","Cash",12_000,"2026-07-27"),recordedBalance("home-loan","Mortgage",120_000,"2026-06-27"),recordedBalance("home","Property",200_000,"2026-01-01")];
+  const evidence=healthBalanceEvidence(evidenceStore(accounts,balances),"2026-10-27");
+  assert.equal(evidence.balanceDataStale,true);assert.deepEqual(evidence.staleBalanceAccounts,["Example reserve","Example home-loan"]);assert.equal(assess(evidence).confidence,"provisional");
+  const refreshed=healthBalanceEvidence(evidenceStore(accounts,balances.map(item=>["reserve","home-loan"].includes(item.id)?{...item,asOf:"2026-10-27"}:item)),"2026-10-27");
+  assert.equal(refreshed.balanceDataStale,false);assert.equal(assess(refreshed).confidence,"complete");
+});
+
+test("undated nonzero balances stay usable only as provisional evidence",()=>{
+  const value=recordedBalance("bank","Current account",18_000);delete value.asOf;
+  const evidence=healthBalanceEvidence(evidenceStore([configuredAccount("bank","current")],[value]),"2026-10-27");
+  assert.equal(evidence.hasReserveData,true);assert.equal(evidence.balanceDataStale,true);assert.equal(assess(evidence).confidence,"provisional");
 });

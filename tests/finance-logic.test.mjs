@@ -11,7 +11,7 @@ import { businessExpensePosition, isBusinessExpenseActivity, isExcludedFromSpend
 import { HEALTH_SCORE_VERSION, assessHealthReadiness, calculateHealthScore, explainHealthMovement, healthComponents } from "../lib/health.ts";
 import { linkedGoalSource, syncGoalsWithBalances } from "../lib/goals.ts";
 import { cashAfterCardDebt, cashBalance, isaBalance } from "../lib/balances.ts";
-import { groupPayslipsByMonth, latestPayslipRecord, payrollFallbackByCycle, payrollFallbackEntries, payslipForCycle, salaryIncomeForMonth } from "../lib/payslips.ts";
+import { activePayrollEmployer, groupPayslipsByMonth, latestPayslipRecord, payrollFallbackByCycle, payrollFallbackEntries, payslipForCycle, payslipMatchesEmployer, salaryIncomeForMonth } from "../lib/payslips.ts";
 import { buildCashRunway } from "../lib/cash-runway.ts";
 import { calculateTaxPosition, createP60Evidence, documentFingerprintExists, payslipFacts, reconcileTaxEvidence, taxYearForDate } from "../lib/tax/index.ts";
 
@@ -236,6 +236,21 @@ test("reconciliation treats an end-of-month payslip as current for its active sa
   assert.equal(latestPayslipRecord([july, august])?.id, "august");
 });
 
+test("payroll view uses the latest saved employer when a legacy profile has no active-employer rule", () => {
+  const previous = { employer: "Previous Systems Limited", payDate: "2026-08-26", netPay: 7000, salary: 8000, cashEarnings: 8000, tax: 500, ni: 500, employeePension: 0, employerPension: 0 };
+  const current = { employer: "Example Labs Limited", payDate: "2026-10-28", netPay: 3600, salary: 5000, cashEarnings: 5000, tax: 800, ni: 250, employeePension: 350, employerPension: 350 };
+  const slips = [previous, current];
+  const employer = activePayrollEmployer(slips);
+  assert.equal(employer, "Example Labs Limited");
+  assert.equal(payslipMatchesEmployer(current, employer), true);
+  assert.equal(payslipMatchesEmployer(previous, employer), false);
+  assert.equal(activePayrollEmployer(slips, "Example Labs"), "Example Labs");
+  assert.equal(payslipMatchesEmployer(current, "Example Labs"), true);
+  assert.equal(activePayrollEmployer([], "Example Labs"), "Example Labs");
+  const latestMonth = groupPayslipsByMonth(slips)[0];
+  assert.equal(latestMonth.employeePension + latestMonth.employerPension, 700);
+});
+
 test("mortgage projections are deterministic and distinguish overpaying", () => {
   const scenario = { ...baselineMortgagePlanner, balance: 250000, annualRate: 5, monthlyPayment: 1500, monthlyOverpayment: 250 };
   const baseline = mortgageProjection(scenario, 0, 0);
@@ -434,6 +449,65 @@ test("Northstar Systems payslips import Workplace Pension and grouped deductions
     rsuGain: 0,
     taxCode: "1257L W1/M1",
   });
+});
+
+test("grouped payslips import a provider-named pension column with interleaved YTD values", () => {
+  const parsed = parsePayslipText(`
+    28/10/2026
+    Monthly Paid
+    1257L Example Engineering
+    Example Labs Limited
+    Employee No
+    Period Pay DateCompany Payroll
+    Employee Name NI Number Tax CodeDepartment
+    01/10/2026 - 31/10/2026
+    Payments
+    Basic Pay Tax Paid
+    EE NI Contribution
+    Smart Pension
+    5,000.00 800.00
+    250.00
+    350.00
+    8,000.00
+    500.00
+    700.00
+    DeductionsAmount Amount YTDRate Units
+    5,000.00
+    3,600.00
+    5,000.00
+    800.00 8,000.00
+    This Period YTD
+    Gross Pay Deductions
+    Net Pay
+    Payment Method
+    EE's Pension 350.00 700.00
+    ER's Pension 350.00 700.00
+  `, "example-payslip.pdf");
+  assert.deepEqual({
+    payDate: parsed.payDate,
+    employer: parsed.employer,
+    salary: parsed.salary,
+    tax: parsed.tax,
+    ni: parsed.ni,
+    employeePension: parsed.employeePension,
+    employerPension: parsed.employerPension,
+    netPay: parsed.netPay,
+  }, {
+    payDate: "2026-10-28",
+    employer: "Example Labs Limited",
+    salary: 5000,
+    tax: 800,
+    ni: 250,
+    employeePension: 350,
+    employerPension: 350,
+    netPay: 3600,
+  });
+});
+
+test("payslip employer labels remain supported without mistaking payroll headers for a company", () => {
+  const values = "Pay Date 28/10/2026 Basic Pay Tax Paid EE NI Contribution Smart Pension 5000.00 800.00 250.00 350.00 ER's Pension 350.00";
+  assert.equal(parsePayslipText(`Employer Example Technology ${values}`).employer, "Example Technology");
+  assert.equal(parsePayslipText(`Company Payroll Employee Name ${values}`).employer, undefined);
 });
 
 test("transaction fingerprints and backups round-trip without changing data", () => {

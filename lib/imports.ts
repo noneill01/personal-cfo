@@ -51,7 +51,13 @@ export function parseMonzoCsv(text: string): { transactions: Tx[]; rejected: num
         amount = (credit ? Math.abs(statementMoney(credit)) : 0) - (debit ? Math.abs(statementMoney(debit)) : 0);
     }
     const validDate = /^\d{4}-\d{2}-\d{2}$/.test(date) && Number.isFinite(Date.parse(date+"T12:00:00Z")) && new Date(date+"T12:00:00Z").toISOString().slice(0,10) === date;
-    if (!validDate || !merchant || !Number.isFinite(amount) || amount === 0) {
+    // Monzo exports card-verification events as real, zero-value records.
+    // Retain their source IDs for audit/deduplication, without relaxing validation
+    // for missing amounts or other unexpected zero-value rows.
+    const cardCheck = amount === 0 && /^[+-]?0+(?:\.0+)?$/.test(raw)
+      && /^card payment$/i.test(pick("type", "transaction type"))
+      && /^active card check$/i.test(pick("notes and #tags", "notes", "reference"));
+    if (!validDate || !merchant || !Number.isFinite(amount) || (amount === 0 && !cardCheck)) {
       issues.push(`Data row ${index+1}: ${!validDate ? "invalid date" : !merchant ? "missing description" : "invalid or zero amount"} (${raw || "no amount"}).`);
       return;
     }
@@ -188,17 +194,22 @@ export function parsePayslipText(raw: string, fileName = "Employer payslip"): Pa
   const payDay = text.match(/Pay\s*Day\s+(\d{1,2}[\/]\d{1,2}[\/]\d{4})/i)?.[1] || text.match(/Pay\s*Date\s+(\d{1,2}[\/]\d{1,2}[\/]\d{4})/i)?.[1] || text.match(/\b(\d{1,2}[\/]\d{1,2}[\/]\d{4})\b/)?.[1] || "";
   const payDate = normaliseDate(payDay);
   const legalName = raw.split(/\r?\n/).map(line=>line.trim()).find(line=>line.length<100&&/\b(?:Limited|Ltd|LLP|PLC)\.?$/i.test(line));
-  const employer = text.match(/(?:Employer|Company)\s*:?\s*([A-Z][A-Za-z0-9 &'’.\-]{2,80}?)(?=\s+(?:Employee|Payslip|Pay\s+(?:Day|Date)|Tax\s+Code))/i)?.[1]?.trim() ?? legalName;
+  // Column headings such as "Company Payroll Employee Name" are not an
+  // employer label. Prefer an explicit label or the standalone legal name.
+  const labelledEmployer = text.match(/\b(?:Employer|Company)(?:\s+Name)?\s*:\s*([A-Z][A-Za-z0-9 &'’.\-]{2,80}?)(?=\s+(?:Employee|Payslip|Pay\s+(?:Day|Date)|Tax\s+Code))/i)?.[1]?.trim();
+  const unpunctuatedEmployer = text.match(/\b(?:Employer|Company)\s+([A-Z][A-Za-z0-9 &'’.\-]{2,80}?)(?=\s+(?:Employee|Payslip|Pay\s+(?:Day|Date)|Tax\s+Code))/i)?.[1]?.trim();
+  const employer = labelledEmployer ?? legalName ?? (unpunctuatedEmployer && !/^(?:Payroll|Name|Number|Department)$/i.test(unpunctuatedEmployer) ? unpunctuatedEmployer : undefined);
   // Some payroll PDFs group current-period values after the Basic Pay, Tax,
   // NI and workplace-pension headings. Detect the layout, not an employer.
-  const groupedCurrentPeriod = /Basic\s+Pay\s+Tax\s+Paid\s+EE\s+NI\s+Contribution\s+(?:Employee\s+|Workplace\s+)?Pension\b/i.test(text);
+  const groupedPensionLabel = "(?:[A-Za-z][A-Za-z'’]*\\s+){0,2}Pension";
+  const groupedCurrentPeriod = new RegExp(`Basic\\s+Pay\\s+Tax\\s+Paid\\s+EE\\s+NI\\s+Contribution\\s+${groupedPensionLabel}\\b`, "i").test(text);
   if (groupedCurrentPeriod) {
-    const currentPeriodBlock = text.match(/Basic\s+Pay\s+Tax\s+Paid\s+EE\s+NI\s+Contribution\s+(?:Employee\s+|Workplace\s+)?Pension\s+((?:-?[\d,]+\.\d{2}\s*){4})/i);
+    const currentPeriodBlock = text.match(new RegExp(`Basic\\s+Pay\\s+Tax\\s+Paid\\s+EE\\s+NI\\s+Contribution\\s+${groupedPensionLabel}\\s+((?:-?[\\d,]+\\.\\d{2}\\s*){4})`, "i"));
     const currentPeriodValues = currentPeriodBlock ? numberList(currentPeriodBlock[1]) : [];
     const salary = Math.abs(currentPeriodValues[0] || pdfMoney(text, /\bBasic\s+Pay\s+([\d,]+\.\d{2})/i));
     const tax = currentPeriodValues[1] ?? pdfMoney(text, /\bTax\s+Paid\s+([\d,]+\.\d{2})/i);
     const ni = Math.abs(currentPeriodValues[2] || pdfMoney(text, /\bEE\s+NI\s+Contribution\s+([\d,]+\.\d{2})/i));
-    const employeePension = Math.abs(currentPeriodValues[3] || pdfMoney(text, /\b(?:Employee\s+|Workplace\s+)?Pension\s+([\d,]+\.\d{2})/i));
+    const employeePension = Math.abs(currentPeriodValues[3] || pdfMoney(text, /\b(?:Employee\s+|Workplace\s+|Smart\s+)?Pension\s+([\d,]+\.\d{2})/i));
     const employerPension = pdfMoney(text, /ER['’]s\s+Pension\s+([\d,]+\.\d{2})/i);
     const netPay = Number((salary - tax - ni - employeePension).toFixed(2));
     const taxCode = text.match(/\b(\d{3,4}[A-Z](?:\s+(?:W1\/M1|M1|W1))?)/i)?.[1]?.trim() || "Unknown";

@@ -49,9 +49,10 @@ function expectedFixedSpending(start:string,end:string,commitments:CashRunwayCom
  * Rebuild the current-account path from configured anchored balances. It retains
  * transfers from savings as real top-ups. Its target path places known fixed
  * commitments on their expected collection dates, then spreads only the
- * variable-spending allowance across the rest of the cycle. Card purchases
- * are intentionally not treated as current cash until the card payment leaves
- * a selected current account.
+ * variable-spending allowance across the rest of the cycle. Off-account personal
+ * spending changes the budget comparison without changing actual current cash.
+ * Card settlements therefore move both cash paths once, while purchases and
+ * refunds consume or restore the spending allowance once.
  */
 export function buildCashRunway({
   allTransactions,
@@ -77,8 +78,9 @@ export function buildCashRunway({
   const accountIds=cashAccounts.map(account=>account.accountId);
   const selected=allTransactions.filter(transaction=>accountIds.includes(transactionAccountId(transaction,imports,accountIds)??""));
   const personalIds=new Set(personalTransactions.map(transaction=>transaction.id));
+  const selectedIds=new Set(selected.map(transaction=>transaction.id));
   const inCycle=selected.filter(transaction=>transaction.date>=start&&transaction.date<=end);
-  const latestActivity=inCycle.map(transaction=>transaction.date).sort().at(-1)??"";
+  const latestActivity=[...inCycle,...personalTransactions.filter(transaction=>transaction.date>=start&&transaction.date<=end)].map(transaction=>transaction.date).sort().at(-1)??"";
   const accountThrough=cashAccounts.map(account=>account.balanceThrough||selected.filter(row=>transactionAccountId(row,imports,accountIds)===account.accountId).map(row=>row.date).sort().at(-1)||"").filter(Boolean);
   const reconstructionThrough=accountThrough.sort()[0]??"";
   const preferredEnd=live?(latestActivity||start):end;
@@ -97,6 +99,11 @@ export function buildCashRunway({
   const openingBalance=balanceAtEnd-cycleTransactions.reduce((total,transaction)=>total+transaction.amount,0);
   const byDate=new Map<string,Tx[]>();
   for(const transaction of cycleTransactions)byDate.set(transaction.date,[...(byDate.get(transaction.date)??[]),transaction]);
+  const offAccountByDate=new Map<string,number>();
+  for(const transaction of personalTransactions){
+    if(selectedIds.has(transaction.id)||transaction.date<start||transaction.date>chartEnd)continue;
+    offAccountByDate.set(transaction.date,(offAccountByDate.get(transaction.date)??0)-transaction.amount);
+  }
   const points:CashRunwayPoint[]=[];
   let actual=openingBalance;
   let onTrack=openingBalance;
@@ -105,13 +112,15 @@ export function buildCashRunway({
     const date=addDays(start,index);
     const day=byDate.get(date)??[];
     const netMovement=day.reduce((total,transaction)=>total+transaction.amount,0);
-    const personalSpend=day.filter(transaction=>personalIds.has(transaction.id)).reduce((total,transaction)=>total-transaction.amount,0);
-    const nonPersonalMovement=netMovement+personalSpend;
+    const currentPersonalSpend=day.filter(transaction=>personalIds.has(transaction.id)).reduce((total,transaction)=>total-transaction.amount,0);
+    const offAccountSpend=offAccountByDate.get(date)??0;
+    const personalSpend=currentPersonalSpend+offAccountSpend;
+    const nonPersonalMovement=netMovement+currentPersonalSpend;
     // A transfer between two selected current accounts is not a savings top-up.
     const dayTopUps=Math.max(0,day.filter(transaction=>transaction.categoryGroup?["future","transfer"].includes(transaction.categoryGroup):["Savings","Transfers"].includes(transaction.category)).reduce((total,transaction)=>total+transaction.amount,0));
     const expectedFixedSpend=fixedByDate.get(date)??0;
     actual+=netMovement;
-    onTrack+=nonPersonalMovement-expectedFixedSpend-variableSpendingPlan/totalDays;
+    onTrack+=nonPersonalMovement+offAccountSpend-expectedFixedSpend-variableSpendingPlan/totalDays;
     savingsTopUps+=dayTopUps;
     points.push({date,actual,onTrack,netMovement,personalSpend,savingsTopUp:dayTopUps,expectedFixedSpend});
   }

@@ -1,14 +1,15 @@
 "use client";
-import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import type { Balance, BalanceReconciliation, ClassificationScope, CycleAnnotation, CycleCloseout, DetailKey, DirectDebitFrequency, DirectDebitSetting, MerchantRule, MortgageAccountId, MortgageImportDraft, MortgagePlanner, PayslipDraft, PayslipRecord, PendingClassification, PendingImport, SavingsChallengeTracking, SinkingFund, Snapshot, SpendingTreatment, Store, Tx } from "../lib/types";
 import { categories as taxonomyCategories, classifyWithRules, defaultSubcategories, inferSubcategory, isInternalPotTransfer, isSavingsChallengeTransfer, merchantRuleKey, subcategories } from "../lib/classification";
 import { cycleBounds, cycleLabel as cycleLabelFor, isRentalIncome, isSalaryTransaction, nextMonthKey, ordinalDay, payCycleAnchorDates, payCycleKey, previousMonthKey, shiftIsoDate, transactionCycleKey } from "../lib/pay-cycles";
 import { accountFreshness, baselineEligibleCycles, configuredAccountCoverage, cycleCoverageStatus, isCoveredTransaction, participatesInOverview, requiredBalanceFreshness, transactionAccountId } from "../lib/coverage";
 import { baselineMortgagePlanner, futureValueOfContributions, mortgageProjection } from "../lib/mortgage";
-import { businessExpensePosition, isBusinessExpenseActivity, isCardRepayment, isExcludedFromSpending, isPayYourselfFirstMovement, savingsFundingUsed, savingsMovementBreakdown, spendingTreatmentFor, spendingTreatmentSummary, transactionKey } from "../lib/transactions";
-import { HEALTH_SCORE_VERSION, assessFinancialHealth, calculateHealthScore, explainHealthMovement, type HealthInputs, type HealthReadiness } from "../lib/health";
+import { businessExpensePosition, groupedPersonalSpending, personalSpendingAmount, personalSpendingTotal, isCardRepayment, isExcludedFromSpending, isPayYourselfFirstMovement, savingsMovementBreakdown, spendingTreatmentFor, spendingTreatmentSummary, transactionKey } from "../lib/transactions";
+import { selectTransactionView, summarizePayCycles } from "../lib/finance-selectors";
+import { HEALTH_SCORE_VERSION, assessFinancialHealth, healthBalanceEvidence, calculateHealthScore, explainHealthMovement, type HealthInputs, type HealthReadiness } from "../lib/health";
 import { syncGoalsWithBalances } from "../lib/goals";
-import { accountKind, assetBalance, debtBalance, isCashAccount, pensionBalance, cardDebtBalance, consumerDebtBalance, cashAfterCardDebt, cashBalance, isaBalance, mortgageDebtBalance, planningCashPosition, propertyAssetBalance, propertyEquity, createBalanceSnapshot, migrateBalanceHistory, comparableCash, cashChange } from "../lib/balances";
+import { accountKind, assetBalance, debtBalance, isCashAccount, pensionBalance, cardDebtBalance, cashAfterCardDebt, cashBalance, isaBalance, mortgageDebtBalance, planningCashPosition, propertyEquity, createBalanceSnapshot, migrateBalanceHistory, comparableCash, cashChange } from "../lib/balances";
 import { groupPayslipsByMonth, latestPayslipRecord, payrollFallbackEntries, payslipForCycle, salaryIncomeForMonth } from "../lib/payslips";
 import { manualPayslipTaxEvidence, mergeImportedPayslip } from "../lib/tax/payslip-evidence.ts";
 import { taxEmployer } from "../lib/tax/employers.ts";
@@ -29,6 +30,9 @@ import Plan from "../components/Plan";
 import Settings from "../components/Settings";
 import Onboarding from "../components/Onboarding";
 import ImportPreview from "../components/ImportPreview";
+import Dialog from "../components/Dialog";
+import type { ReviewTask } from "../components/MonthlyReview";
+import { confirmAccountReview } from "../lib/review-workflow";
 import { finishOnboarding, setOnboardingStep, shouldShowOnboarding } from "../lib/onboarding.ts";
 import { disableFeaturePack, enableFeaturePack, isFeaturePackEnabled, visibleNavigation } from "../lib/feature-packs.ts";
 import Tax from "../components/Tax";
@@ -39,25 +43,20 @@ import { hasRole } from "../lib/transaction-roles.ts";
 import { useCategorySelectionSync } from "../lib/category-selection.ts";
 import { regionalFormatters } from "../lib/region.ts";
 import { createDemoStore } from "../lib/demo.ts";
+import AddDataMenu from "../components/AddDataMenu";
+import {navigationItems,screenTitle} from "../lib/presentation";
 /**
  * Safe first-run defaults. Personal balances and history live only in the
  * browser's IndexedDB store (or an exported backup), never in the repository.
  */
 const baselineSavingsChallengeTracking:SavingsChallengeTracking={balance:0,syncedThrough:"",updatedAt:""};
-const primaryNavigation=[
-  {label:"Home",target:"Overview"},
-  {label:"Monthly Review",target:"Monthly Review"},
-  {label:"Transactions",target:"Transactions"},
-  {label:"Plan",target:"Plan"},
-  {label:"Tax",target:"Tax"},
-  {label:"Settings",target:"Settings"},
-] as const;
-const appTabs=["Overview","Monthly Review","Transactions","Plan","Budget","Goals","Mortgage","Leakage","Tax","Settings","Update","Accounts","Income","Direct Debits"] as const;
+const primaryNavigation=navigationItems;
+const appTabs=["Overview","Monthly Review","Transactions","Plan","Budget","Goals","Mortgage","Leakage","Tax","Settings","Update","Accounts","Income","Direct Debits","Backup"] as const;
 function isAppTab(value:unknown): value is string { return typeof value==="string"&&appTabs.includes(value as typeof appTabs[number]); }
 function parentSection(tab:string){
   if(tab==="Overview")return "Home";
-  if(tab==="Monthly Review")return "Monthly Review";
-  if(tab==="Transactions")return "Transactions";
+  if(tab==="Monthly Review")return "Review";
+  if(tab==="Transactions"||tab==="Leakage")return "Activity";
   if(["Plan","Budget","Goals","Mortgage","Leakage"].includes(tab))return "Plan";
   if(tab==="Tax")return "Tax";
   return "Settings";
@@ -83,6 +82,7 @@ const baselineSinkingFunds:SinkingFund[]=[];
 const baselineCycleAnnotations: Record<string, CycleAnnotation>={};
 type AutomaticBackupStatus = "checking"|"not-configured"|"ready"|"needs-permission"|"unsupported"|"saving"|"error";
 const initialStore: Store = createFreshStore();
+const ReviewWorkspace=lazy(()=>import("../components/ReviewWorkspace"));
 export default function Home() {
   const [store, setStoreState] = useState<Store>(initialStore);
   const regional=useMemo(()=>regionalFormatters(store.profile),[store.profile]),gbp=regional.money,gbpExact=regional.moneyExact;
@@ -131,6 +131,8 @@ export default function Home() {
   const [budgetCycle,setBudgetCycle]=useState("latest");
   const [overviewCycle,setOverviewCycle]=useState("latest");
   const [reviewCycleSelection,setReviewCycleSelection]=useState("latest");
+  const [reviewTask,setReviewTask]=useState<ReviewTask|null>(null);
+  const reviewTaskOpener=useRef<HTMLElement|null>(null);
   const [detailKey, setDetailKeyState] = useState<DetailKey|null>(null);
   const [selectedPayslipId,setSelectedPayslipId]=useState<string|null>(null);
   const [subcategoryDialog,setSubcategoryDialog]=useState<{category:string;transactionId?:string}|null>(null);
@@ -455,49 +457,18 @@ export default function Home() {
   const historicalDirectDebitKeys=new Set(directDebitRows.map(row=>row.key));
   const directDebitHistory=cycleKeys.slice(0,6).reverse().map(key=>({key,total:store.transactions.filter(transaction=>transaction.account==="Monzo"&&transaction.amount<0&&historicalDirectDebitKeys.has(merchantRuleKey(transaction.merchant))&&payCycleKey(transaction.date,payday,salaryDates)===key).reduce((sum,transaction)=>sum-transaction.amount,0)}));
   const maxDirectDebitHistory=Math.max(...directDebitHistory.map(item=>item.total),1);
-  const periodTransactions=resolvedTransactions.filter(t=>{
-    if(period==="All data")return true;
-    if(["Current pay cycle","Last completed pay cycle","Latest imported pay cycle","Latest pay cycle"].includes(period))return transactionCycleKey(t,payday,salaryDates)===selectedPeriodCycleKey;
-    if(period.startsWith("cycle:"))return transactionCycleKey(t,payday,salaryDates)===period.slice(6);
-    const months=Number(period.split(" ")[0]);
-    const anchor=new Date(`${coverage.to||new Date().toISOString().slice(0,10)}T12:00:00`);anchor.setMonth(anchor.getMonth()-months);
-    return new Date(`${t.date}T12:00:00`)>=anchor;
-  });
-  const filtered = periodTransactions.filter(t => {
-    const matches=`${t.merchant} ${t.account}`.toLowerCase().includes(query.toLowerCase())&&(accountFilter==="All accounts"||t.account===accountFilter)&&(["All","All categories"].includes(category)||t.category===category)&&(subcategoryFilter==="All subcategories"||(t.subcategory||inferSubcategory(t.category,t.merchant))===subcategoryFilter);
-    if(!matches)return false;
-    if(txView==="Income")return t.amount>0;
-    if(txView==="Savings")return isPayYourselfFirstMovement(t);
-    if(txView==="Work expenses")return isBusinessExpenseActivity(t);
-    if(txView==="Spending")return t.amount<0&&!isExcludedFromSpending(t);
-    return true;
-  });
-
-  const categorySpend = Object.entries(periodTransactions.filter(t => t.amount < 0 && !isExcludedFromSpending(t)).reduce<Record<string, number>>((a, t) => { a[t.category] = (a[t.category] || 0) + -t.amount; return a; }, {})).sort((a,b) => b[1]-a[1]);
-  const subcategorySpend = Object.entries(periodTransactions.filter(t => t.amount < 0 && !isExcludedFromSpending(t) && (category==="All categories"||t.category===category)).reduce<Record<string, number>>((a, t) => { const name=t.subcategory||inferSubcategory(t.category,t.merchant);a[name]=(a[name]||0)+-t.amount;return a; }, {})).sort((a,b)=>b[1]-a[1]);
-  const breakdownSpend=category==="All categories"?categorySpend:subcategorySpend;
-  const spending = categorySpend.reduce((s, [,v]) => s + v, 0);
-  const income = periodTransactions.filter(t => t.amount > 0 && t.categoryGroup === "income").reduce((s,t) => s+t.amount, 0);
-  const maxCategory = Math.max(...breakdownSpend.map(([,v]) => v), 1);
+  const {periodTransactions,scopedTransactions,filtered,subcategorySpend,breakdownSpend,spending,income,maxCategory,selectedBusinessExpenses}=selectTransactionView({transactions:resolvedTransactions,period,cycleKey:selectedPeriodCycleKey,payday,salaryDates,through:coverage.to||todayIso,query,accountFilter,category,subcategoryFilter,activity:txView,imports:store.imports,accountIds:store.profile?.accounts.map(account=>account.id)});
   const displayedTransactions=[...filtered].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,txLimit);
-  const uncategorised=periodTransactions.filter(t=>t.amount<0&&needsReview(t)).length;
-  const selectedBusinessExpenses=businessExpensePosition(periodTransactions);
+  const uncategorised=scopedTransactions.filter(t=>personalSpendingAmount(t)!==0&&needsReview(t)).length;
   const allBusinessExpenses=useMemo(()=>businessExpensePosition(resolvedTransactions),[resolvedTransactions]);
   const payrollFallbacks=useMemo(()=>payrollFallbackEntries(store.payslips??[],store.transactions,payday,salaryDates,incomeSources),[store.payslips,store.transactions,payday,salaryDates,incomeSources]);
-  const monthly = useMemo(() => {
-    const map: Record<string, { income: number; spend: number; payslipFallback:number }> = {};
-    resolvedTransactions.forEach(t => { if(!participatesInOverview(t,accountCoverage,store.imports))return;const k=transactionCycleKey(t,payday,salaryDates); map[k] ||= {income:0,spend:0,payslipFallback:0}; if(t.categoryGroup==="income"&&t.amount>0){map[k].income+=t.amount} else if(t.amount<0&&!isExcludedFromSpending(t)) map[k].spend+=-t.amount; });
-    payrollFallbacks.forEach(({cycleKey,amount})=>{map[cycleKey] ||= {income:0,spend:0,payslipFallback:0};map[cycleKey].income+=amount;map[cycleKey].payslipFallback+=amount});
-    // Keep a visual slot for every payroll month even when a handover payment
-    // arrived just before the new salary-cycle boundary.
-    (store.payslips??[]).forEach(payslip=>{const key=payslip.payDate.slice(0,7);map[key] ||= {income:0,spend:0,payslipFallback:0}});
-    return Object.entries(map).sort().slice(-6).map(([key,value])=>[key,{...value,salaryIncome:salaryIncomeForMonth(resolvedTransactions,key,store.payslips??[],incomeSources),savingsUsed:savingsFundingUsed(resolvedTransactions.filter(transaction=>transactionCycleKey(transaction,payday,salaryDates)===key))}] as const);
-  }, [resolvedTransactions,store.imports,store.payslips,accountCoverage,payday,salaryDates,payrollFallbacks,incomeSources]);
+  const cycleSummaries=useMemo(()=>summarizePayCycles({transactions:resolvedTransactions,payslips:store.payslips,payrollFallbacks,payday,salaryDates,coverage:accountCoverage,imports:store.imports,incomeSources}),[resolvedTransactions,store.imports,store.payslips,accountCoverage,payday,salaryDates,payrollFallbacks,incomeSources]);
+  const monthly=useMemo(()=>cycleSummaries.slice(-6),[cycleSummaries]);
   const maxMonth = Math.max(...monthly.flatMap(([,v]) => [v.income+v.savingsUsed,v.salaryIncome,v.spend]),1);
   const latestMonth = monthly.at(-1)?.[1] ?? { income: 0, spend: 0 };
   const latestCycleKey=monthly.at(-1)?.[0]??payCycleKey(new Date().toISOString().slice(0,10),payday,salaryDates);
   const latestCycleTransactions=useMemo(()=>resolvedTransactions.filter(t=>transactionCycleKey(t,payday,salaryDates)===latestCycleKey),[resolvedTransactions,payday,salaryDates,latestCycleKey]);
-  const latestCategorySpend=latestCycleTransactions.filter(t=>participatesInOverview(t,accountCoverage,store.imports)&&t.amount<0&&!isExcludedFromSpending(t)&&!(store.profile?.propertyConfig?.rentalMortgageMerchantKey&&merchantRuleKey(t.merchant)===store.profile.propertyConfig.rentalMortgageMerchantKey)).reduce<Record<string,number>>((a,t)=>{a[t.category]=(a[t.category]||0)-t.amount;return a},{});
+  const latestCategorySpend=groupedPersonalSpending(latestCycleTransactions.filter(t=>participatesInOverview(t,accountCoverage,store.imports)&&!(store.profile?.propertyConfig?.rentalMortgageMerchantKey&&merchantRuleKey(t.merchant)===store.profile.propertyConfig.rentalMortgageMerchantKey)));
   const savingsChallengeTransactions=useMemo(()=>store.transactions.filter(isSavingsChallengeTransfer),[store.transactions]);
   const currentSavingsChallenge=useMemo(()=>savingsChallengeTransactions.filter(transaction=>transaction.date.startsWith("2026-")&&transaction.amount<0),[savingsChallengeTransactions]);
   const savingsChallengeTotal=currentSavingsChallenge.reduce((sum,transaction)=>sum-transaction.amount,0);
@@ -525,28 +496,28 @@ export default function Home() {
   const isRentalCategory=useCallback((transaction:Tx)=>transaction.categoryGroup==="property"||Boolean(rentalCategoryId&&transaction.categoryId===rentalCategoryId),[rentalCategoryId]);
   const isMaintenance=(transaction:Tx)=>hasRole(transaction,"maintenance");
   const sensibleBudgetPlan:Record<string,number>=store.profile?.planning?.seedPlan??{};
-  const coverageForCycle=(key:string)=>{const status=cycleCoverageStatus(key,payday,salaryDates,accountCoverage,store.imports,store.cardCoverageConfirmations,store.accountCoverageConfirmations);return {...status,hasMonzoGap:accountCoverage.currentGaps.some(gap=>gap.from<=status.bounds.end&&gap.to>=status.bounds.start),monzoComplete:status.currentComplete,cardComplete:status.creditComplete,cardHistoryStarted:status.creditHistoryStarted,confirmedCardThrough:status.confirmedCreditThrough,effectiveCardTo:status.effectiveCreditTo};};
+  const coverageForCycle=(key:string)=>{const status=cycleCoverageStatus(key,payday,salaryDates,accountCoverage,store.imports,store.cardCoverageConfirmations,store.accountCoverageConfirmations);return {...status,hasMonzoGap:status.accounts.some(account=>account.kind==="current"&&account.hasGap),monzoComplete:status.currentComplete,cardComplete:status.creditComplete,cardHistoryStarted:status.creditHistoryStarted,confirmedCardThrough:status.confirmedCreditThrough,effectiveCardTo:status.effectiveCreditTo};};
   const cycleHasFullCoverage=(key:string)=>coverageForCycle(key).complete;
   const overviewCycleKey=overviewCycle==="latest"?currentCycleKey:overviewCycle;
   const overviewCycleTransactions=resolvedTransactions.filter(transaction=>transactionCycleKey(transaction,payday,salaryDates)===overviewCycleKey);
-  const overviewSpendTransactions=overviewCycleTransactions.filter(transaction=>participatesInOverview(transaction,accountCoverage,store.imports)&&transaction.amount<0&&!isExcludedFromSpending(transaction));
-  const overviewSpending=overviewSpendTransactions.reduce((sum,transaction)=>sum-transaction.amount,0);
+  const overviewSpendTransactions=overviewCycleTransactions.filter(transaction=>participatesInOverview(transaction,accountCoverage,store.imports)&&personalSpendingAmount(transaction)!==0);
+  const overviewSpending=personalSpendingTotal(overviewSpendTransactions);
   const overviewSpendingTreatments=spendingTreatmentSummary(overviewCycleTransactions);
   const overviewOneOffs=overviewSpendingTreatments["Planned one-off"]+overviewSpendingTreatments["Unplanned one-off"];
   const overviewUnderlyingSpending=overviewSpending-overviewOneOffs;
-  const overviewIncome=monthly.find(([key])=>key===overviewCycleKey)?.[1].income??overviewCycleTransactions.filter(transaction=>participatesInOverview(transaction,accountCoverage,store.imports)&&transaction.categoryGroup==="income"&&transaction.amount>0).reduce((sum,transaction)=>sum+transaction.amount,0);
+  const overviewIncome=cycleSummaries.find(([key])=>key===overviewCycleKey)?.[1].income??overviewCycleTransactions.filter(transaction=>participatesInOverview(transaction,accountCoverage,store.imports)&&transaction.categoryGroup==="income"&&transaction.amount>0).reduce((sum,transaction)=>sum+transaction.amount,0);
   const overviewSavingsTransactions=overviewCycleTransactions.filter(isPayYourselfFirstMovement);
   const netSavingsMovement=(transactions:Tx[])=>transactions.reduce((sum,transaction)=>sum-transaction.amount,0);
   const overviewSavings=netSavingsMovement(overviewSavingsTransactions);
   const overviewSavingsBreakdown=savingsMovementBreakdown(overviewCycleTransactions);
   const overviewMustPayTransactions=overviewSpendTransactions.filter(transaction=>historicalDirectDebitKeys.has(merchantRuleKey(transaction.merchant))||isMaintenance(transaction));
-  const overviewMustPay=overviewMustPayTransactions.reduce((sum,transaction)=>sum-transaction.amount,0);
-  const overviewFlexibleSpend=Math.max(0,overviewSpending-overviewMustPay);
+  const overviewMustPay=personalSpendingTotal(overviewMustPayTransactions);
+  const overviewFlexibleSpend=overviewSpending-overviewMustPay;
   const overviewUnallocated=overviewIncome-overviewSpending-overviewSavings;
   const overviewSavingsRate=overviewIncome?overviewSavings/overviewIncome*100:0;
   const overviewExcludedMovements=overviewCycleTransactions.filter(transaction=>transaction.amount<0&&isExcludedFromSpending(transaction)).length;
   const overviewNeedsReview=overviewSpendTransactions.filter(needsReview).length;
-  const overviewCategorySpend=Object.entries(overviewSpendTransactions.reduce<Record<string,number>>((result,transaction)=>{result[transaction.category]=(result[transaction.category]||0)-transaction.amount;return result},{})).sort(([,a],[,b])=>b-a);
+  const overviewCategorySpend=Object.entries(groupedPersonalSpending(overviewSpendTransactions)).filter(([,amount])=>amount!==0).sort(([,a],[,b])=>Math.abs(b)-Math.abs(a));
   const overviewMaxCategory=Math.max(...overviewCategorySpend.map(([,amount])=>amount),1);
   const overviewComplete=cycleHasFullCoverage(overviewCycleKey);
   const overviewBankTransactions=overviewCycleTransactions.filter(transaction=>isCoveredTransaction(transaction,accountCoverage,store.imports));
@@ -558,10 +529,10 @@ export default function Home() {
   const currentCycleComplete=cycleHasFullCoverage(currentCycleKey);
   const currentCycleDataState: "complete"|"partial"|"awaiting"=currentCycleComplete?"complete":currentCycleBankTransactions.length?"partial":"awaiting";
   const cycleAnnotations=store.cycleAnnotations??baselineCycleAnnotations;
-  const completedCycleKeys=baselineEligibleCycles(monthly.map(([key])=>key),currentCycleKey,cycleHasFullCoverage,cycleAnnotations);
+  const completedCycleKeys=baselineEligibleCycles(cycleSummaries.map(([key])=>key),currentCycleKey,cycleHasFullCoverage,cycleAnnotations);
   const baselineCycleCount=Math.max(completedCycleKeys.length,1);
   const isRentalMortgage=useCallback((transaction:Tx)=>Boolean(store.profile?.propertyConfig?.rentalMortgageMerchantKey)&&merchantRuleKey(transaction.merchant)===store.profile?.propertyConfig?.rentalMortgageMerchantKey,[store.profile?.propertyConfig?.rentalMortgageMerchantKey]);
-  const baselineCategorySpend=resolvedTransactions.filter(t=>participatesInOverview(t,accountCoverage,store.imports)&&completedCycleKeys.includes(payCycleKey(t.date,payday,salaryDates))&&t.amount<0&&!isExcludedFromSpending(t)&&!isRentalMortgage(t)&&!isRentalCategory(t)).reduce<Record<string,number>>((a,t)=>{a[t.category]=(a[t.category]||0)-t.amount;return a},{});
+  const baselineCategorySpend=groupedPersonalSpending(resolvedTransactions.filter(t=>participatesInOverview(t,accountCoverage,store.imports)&&completedCycleKeys.includes(payCycleKey(t.date,payday,salaryDates))&&!isRentalMortgage(t)&&!isRentalCategory(t)));
   const averageFor=(categoryName:string)=>Math.round(((baselineCategorySpend[categoryName]||0)/baselineCycleCount)/10)*10;
   const roundTo25=(value:number)=>Math.max(0,Math.round(value/25)*25);
   const rentalIncomeTransactions=store.transactions.filter(rentalIncomeTransaction).sort((a,b)=>a.date.localeCompare(b.date));
@@ -578,9 +549,11 @@ export default function Home() {
   const plannedFor=(name:string,fallback:number)=>Math.max(0,store.profile?.planning?.budgetPlan?.[name]??fallback);
   const lastPlanCycleKey=selectLastCompletedCycle(currentCycleKey,cycleKeys,cycleHasFullCoverage);
   const lastPlanCycleBounds=lastPlanCycleKey?cycleBounds(lastPlanCycleKey,payday,salaryDates):{start:"",end:""};
-  const planningCycleBounds=cycleBounds(currentCycleKey,payday,salaryDates);
+  const [planningPeriod,setPlanningPeriod]=useState<"current"|"next">("current");
+  const planningPeriodKey=planningPeriod==="next"&&(tab==="Budget"||tab==="Plan")?nextMonthKey(currentCycleKey):currentCycleKey;
+  const planningCycleBounds=cycleBounds(planningPeriodKey,payday,salaryDates);
   const lastPlanCycleTransactions=resolvedTransactions.filter(transaction=>participatesInOverview(transaction,accountCoverage,store.imports)&&transactionCycleKey(transaction,payday,salaryDates)===lastPlanCycleKey);
-  const lastPlanCycleSpend=lastPlanCycleTransactions.filter(transaction=>transaction.amount<0&&!isExcludedFromSpending(transaction)&&!isRentalMortgage(transaction)&&!isRentalCategory(transaction)).reduce<Record<string,number>>((result,transaction)=>{result[transaction.category]=(result[transaction.category]??0)-transaction.amount;return result},{});
+  const lastPlanCycleSpend=groupedPersonalSpending(lastPlanCycleTransactions.filter(transaction=>!isRentalMortgage(transaction)&&!isRentalCategory(transaction)));
   const planningMaintenanceHistory=resolvedTransactions.filter(transaction=>transaction.amount<0&&isMaintenance(transaction)).sort((a,b)=>a.date.localeCompare(b.date));
   const planningMaintenanceAmounts=planningMaintenanceHistory.slice(-3).map(transaction=>-transaction.amount).sort((a,b)=>a-b);
   const planningMaintenance=planningMaintenanceAmounts.length?planningMaintenanceAmounts[Math.floor(planningMaintenanceAmounts.length/2)]:0;
@@ -620,26 +593,26 @@ export default function Home() {
   const fixedCommitmentReserved=Math.max(0,fixedCommitmentExpected-fixedCommitmentBudgetCovered);
   const selectedNonMonthlyCollections=selectedBudgetTransactions.filter(transaction=>transaction.amount<0&&nonMonthlyDirectDebits.some(row=>row.key===merchantRuleKey(transaction.merchant))).reduce((sum,transaction)=>sum-transaction.amount,0);
   const selectedTvLicenceSpend=selectedBudgetTransactions.filter(transaction=>transaction.amount<0&&merchantRuleKey(transaction.merchant)==="tv licensing").reduce((sum,transaction)=>sum-transaction.amount,0);
-  const selectedRentalOperatingSpend=selectedBudgetTransactions.filter(transaction=>transaction.amount<0&&!isExcludedFromSpending(transaction)&&isRentalCategory(transaction)).reduce((sum,transaction)=>sum-transaction.amount,0);
-  const selectedBudgetCategorySpend=useMemo(()=>selectedBudgetTransactions.filter(t=>participatesInOverview(t,accountCoverage,store.imports)&&t.amount<0&&!isExcludedFromSpending(t)&&!isRentalMortgage(t)&&!isRentalCategory(t)).reduce<Record<string,number>>((a,t)=>{a[t.category]=(a[t.category]||0)-t.amount;return a},{}),[selectedBudgetTransactions,accountCoverage,store.imports,isRentalCategory,isRentalMortgage]);
+  const selectedRentalOperatingSpend=personalSpendingTotal(selectedBudgetTransactions.filter(transaction=>isRentalCategory(transaction)&&!isRentalMortgage(transaction)));
+  const selectedBudgetCategorySpend=useMemo(()=>groupedPersonalSpending(selectedBudgetTransactions.filter(t=>participatesInOverview(t,accountCoverage,store.imports)&&!isRentalMortgage(t)&&!isRentalCategory(t))),[selectedBudgetTransactions,accountCoverage,store.imports,isRentalCategory,isRentalMortgage]);
   const selectedBudgetSpend=Object.values(selectedBudgetCategorySpend).reduce((sum,value)=>sum+value,0);
   const selectedLifestyleSpend=lifestyleCategories.reduce((sum,name)=>sum+(selectedBudgetCategorySpend[name]||0),0);
   const selectedEssentialSpend=essentialCategories.reduce((sum,name)=>sum+(selectedBudgetCategorySpend[name]||0),0);
   const lifestyleRemaining=lifestyleTotal-selectedLifestyleSpend;
-  const lifestyleUsed=lifestyleTotal?selectedLifestyleSpend/lifestyleTotal*100:0;
-  const selectedRentalMortgageSpend=selectedBudgetTransactions.filter(transaction=>transaction.amount<0&&isRentalMortgage(transaction)).reduce((sum,transaction)=>sum-transaction.amount,0);
+  const lifestyleUsed=lifestyleTotal?Math.max(0,selectedLifestyleSpend/lifestyleTotal*100):0;
+  const selectedRentalMortgageSpend=personalSpendingTotal(selectedBudgetTransactions.filter(isRentalMortgage));
   const selectedPrimaryMortgageSpend=selectedBudgetTransactions.filter(transaction=>transaction.amount<0&&spendingAccountIds.includes(transactionAccountId(transaction,store.imports??[],spendingAccountIds)??"")&&merchantRuleKey(transaction.merchant)===store.profile?.propertyConfig?.homeMortgageMerchantKey).reduce((sum,transaction)=>sum-transaction.amount,0);
   const selectedHousingSpend=(selectedBudgetCategorySpend[categoryFor(store.profile,"Housing")?.name??"Housing"]||0)+selectedRentalMortgageSpend;
   const selectedOtherHousingSpend=Math.max(0,selectedHousingSpend-selectedPrimaryMortgageSpend-selectedRentalMortgageSpend);
   const selectedTotalCashOut=selectedBudgetSpend+selectedRentalMortgageSpend+selectedRentalOperatingSpend;
-  const selectedBudgetIncome=monthly.find(([key])=>key===selectedBudgetCycle)?.[1].income??selectedBudgetTransactions.filter(t=>participatesInOverview(t,accountCoverage,store.imports)&&t.amount>0&&t.categoryGroup==="income").reduce((sum,t)=>sum+t.amount,0);
+  const selectedBudgetIncome=cycleSummaries.find(([key])=>key===selectedBudgetCycle)?.[1].income??selectedBudgetTransactions.filter(t=>participatesInOverview(t,accountCoverage,store.imports)&&t.amount>0&&t.categoryGroup==="income").reduce((sum,t)=>sum+t.amount,0);
   const selectedCycleRentIncome=selectedBudgetTransactions.filter(rentalIncomeTransaction).reduce((sum,transaction)=>sum+transaction.amount,0);
   // The card's total is cash-flow-cycle based. Salary itself is explicitly
   // reported by payroll month, so an employer handover cannot distort it.
   const selectedCycleSalaryIncome=salaryIncomeForMonth(store.transactions,selectedBudgetCycle,store.payslips??[]);
   const selectedCycleCashFlow=selectedBudgetIncome-selectedTotalCashOut;
   const selectedMustPayOut=fixedCommitmentPaid+selectedRentalMortgageSpend+selectedRentalOperatingSpend;
-  const selectedFlexibleCashOut=Math.max(0,selectedBudgetSpend-fixedCommitmentPaid);
+  const selectedFlexibleCashOut=selectedBudgetSpend-fixedCommitmentPaid;
   const selectedEveryPoundRemaining=selectedBudgetIncome-selectedMustPayOut-selectedFlexibleCashOut-selectedPayYourselfFirst;
   const selectedEveryPoundAllocated=selectedMustPayOut+selectedFlexibleCashOut+selectedPayYourselfFirst;
   const selectedPayYourselfFirstProgress=futureTotal?Math.max(0,selectedPayYourselfFirst/futureTotal*100):0;
@@ -648,17 +621,17 @@ export default function Home() {
   const selectedCycleDataLabel=selectedCycleLatestDate?regional.formatDate(selectedCycleLatestDate,{day:"numeric",month:"short",year:"numeric"}):"No transactions imported";
   const spendingPlan=essentialsTotal+lifestyleTotal;
   const budgetRemaining=spendingPlan-selectedBudgetSpend;
-  const budgetUsed=spendingPlan?selectedBudgetSpend/spendingPlan*100:0;
+  const budgetUsed=spendingPlan?Math.max(0,selectedBudgetSpend/spendingPlan*100):0;
   const planRows=[...essentialPlan,...lifestylePlan];
   const baselineMonthlyActual=planRows.reduce((sum,item)=>sum+item.actual,0);const housingEvidence=averageFor(categoryFor(store.profile,"Housing")?.name??"Housing");
   const personalDirectDebitTotal=Math.max(0,monthlyDirectDebitTotal-typicalRentalMortgage);
   const variableMonthlyActual=Math.max(0,baselineMonthlyActual-personalDirectDebitTotal);
   const recommendedPlanTotal=Object.values(recommendedBudgetPlan).reduce((sum,value)=>sum+value,0);
   const recommendedPlanBuffer=planningIncome-recommendedPlanTotal;
-  const completedCycleReview=completedCycleKeys.map(key=>{const transactions=resolvedTransactions.filter(transaction=>payCycleKey(transaction.date,payday,salaryDates)===key);const personalSpend=transactions.filter(transaction=>transaction.amount<0&&!isExcludedFromSpending(transaction)&&!isRentalMortgage(transaction)&&!isRentalCategory(transaction)).reduce((sum,transaction)=>sum-transaction.amount,0);const salary=salaryIncomeForMonth(resolvedTransactions,key,store.payslips??[],incomeSources);const rent=transactions.filter(rentalIncomeTransaction).reduce((sum,transaction)=>sum+transaction.amount,0);return {key,personalSpend,salary,rent}});
+  const completedCycleReview=completedCycleKeys.map(key=>{const transactions=resolvedTransactions.filter(transaction=>participatesInOverview(transaction,accountCoverage,store.imports)&&payCycleKey(transaction.date,payday,salaryDates)===key);const personalSpend=personalSpendingTotal(transactions.filter(transaction=>!isRentalMortgage(transaction)&&!isRentalCategory(transaction)));const salary=salaryIncomeForMonth(resolvedTransactions,key,store.payslips??[],incomeSources);const rent=transactions.filter(rentalIncomeTransaction).reduce((sum,transaction)=>sum+transaction.amount,0);return {key,personalSpend,salary,rent}});
   const maxCompletedSpend=Math.max(...completedCycleReview.map(item=>item.personalSpend),1);
   const travelCategoryName=categoryFor(store.profile,"Travel")?.name??"Travel";
-  const travelEvidenceByCycle=completedCycleKeys.map(key=>resolvedTransactions.filter(transaction=>payCycleKey(transaction.date,payday,salaryDates)===key&&transaction.amount<0&&transaction.categoryId==="category:travel").reduce((sum,transaction)=>sum-transaction.amount,0));const travelPlan=lifestylePlan.find(item=>item.name===travelCategoryName)?.amount??0;
+  const travelEvidenceByCycle=completedCycleKeys.map(key=>personalSpendingTotal(resolvedTransactions.filter(transaction=>payCycleKey(transaction.date,payday,salaryDates)===key&&transaction.categoryId==="category:travel")));const travelPlan=lifestylePlan.find(item=>item.name===travelCategoryName)?.amount??0;
   const categoryOverages=planRows.filter(item=>(selectedBudgetCategorySpend[item.name]||0)>item.amount&&item.amount>0).sort((a,b)=>((selectedBudgetCategorySpend[b.name]||0)-b.amount)-((selectedBudgetCategorySpend[a.name]||0)-a.amount));
   const essentialOverBudgetCategories=categoryOverages.filter(item=>essentialCategories.includes(item.name));
   const lifestyleOverBudgetCategories=categoryOverages.filter(item=>lifestyleCategories.includes(item.name));
@@ -744,7 +717,7 @@ export default function Home() {
   const subscriptionSpend=subscriptionTransactions.reduce((sum,transaction)=>sum-transaction.amount,0);
   const leakageRate=selectedBudgetSpend?reviewableSpend/selectedBudgetSpend*100:0;
   const scoreCycleKey=completedCycleKeys.at(-1)??"";
-  const scoreMonth=monthly.find(([key])=>key===scoreCycleKey)?.[1]??{income:0,spend:0,savingsUsed:0,salaryIncome:0,payslipFallback:0};
+  const scoreMonth=cycleSummaries.find(([key])=>key===scoreCycleKey)?.[1]??{income:0,spend:0,savingsUsed:0,salaryIncome:0,payslipFallback:0};
   const scoreCashFlow=scoreMonth.income-scoreMonth.spend;
   const scoreCycleTransactions=resolvedTransactions.filter(transaction=>transactionCycleKey(transaction,payday,salaryDates)===scoreCycleKey);
   const scorePayYourselfFirst=scoreCycleTransactions.filter(isPayYourselfFirstMovement).reduce((sum,transaction)=>sum-transaction.amount,0);
@@ -756,24 +729,23 @@ export default function Home() {
   const debtRatio = totals.assets ? totals.debt/totals.assets*100 : 0;
   const snapshots = useMemo(()=>store.snapshots ?? initialStore.snapshots ?? [],[store.snapshots]);
   const scorePeriodStale=scoreCycleKey?cycleBounds(scoreCycleKey,payday,salaryDates).end<shiftIsoDate(todayIso,-45):false;
-  const hasRecordedBalance=(balance:Balance)=>Boolean(balance.asOf)||balance.value!==0;
-  const currentHealthInputs:HealthInputs={cashProgress,savingsRate,cashFlowMargin:scoreMonth.income>0?cashFlowMargin:undefined,debtRatio,accessibleCash:totals.cash,essentialMonthlySpend:essentialsTotal,monthlyIncome:scoreMonth.income||undefined,creditCardDebt:cardDebtBalance(store.balances),consumerDebt:consumerDebtBalance(store.balances),mortgageDebt:mortgageDebtBalance(store.balances),propertyAssets:propertyAssetBalance(store.balances),hasBalanceData:store.balances.some(hasRecordedBalance),sourcePeriod:scoreCycleKey||undefined,sourcePeriodLabel:scoreCycleKey?cycleLabel(scoreCycleKey,payday,salaryDates):undefined,sourcePeriodComplete:Boolean(scoreCycleKey),sourcePeriodStale:scorePeriodStale,balancesAsOf:balanceFreshness.asOf||undefined,balanceDataStale};
+  const currentHealthInputs:HealthInputs={cashProgress,savingsRate,cashFlowMargin:scoreMonth.income>0?cashFlowMargin:undefined,debtRatio,essentialMonthlySpend:essentialsTotal,monthlyIncome:scoreMonth.income||undefined,sourcePeriod:scoreCycleKey||undefined,sourcePeriodLabel:scoreCycleKey?cycleLabel(scoreCycleKey,payday,salaryDates):undefined,sourcePeriodComplete:Boolean(scoreCycleKey),sourcePeriodStale:scorePeriodStale,...healthBalanceEvidence(store,todayIso)};
   const healthAssessment=assessFinancialHealth(currentHealthInputs),healthScore=healthAssessment.score??0;
   const healthReadiness:HealthReadiness={ready:healthAssessment.score!==null,confidence:healthAssessment.confidence==="complete"?"Complete":healthAssessment.confidence==="provisional"?"Partial":"Setup needed",missing:healthAssessment.missing,message:healthAssessment.summary};
   const activeSection=parentSection(tab);
   const reviewCycleOptions=cycleKeys.filter(key=>key<currentCycleKey).slice(0,12);
   const reviewCycleKey=reviewCycleSelection==="latest"?lastCompletedCycleKey:reviewCycleSelection;
   const reviewCycleTransactions=resolvedTransactions.filter(transaction=>transactionCycleKey(transaction,payday,salaryDates)===reviewCycleKey);
-  const reviewCycleSummary=monthly.find(([key])=>key===reviewCycleKey)?.[1]??{income:0,spend:0,payslipFallback:0};
+  const reviewCycleSummary=cycleSummaries.find(([key])=>key===reviewCycleKey)?.[1]??{income:0,spend:0,payslipFallback:0};
   const reviewSpendingTreatments=spendingTreatmentSummary(reviewCycleTransactions);
   const reviewPlannedOneOffs=reviewSpendingTreatments["Planned one-off"];
   const reviewUnplannedOneOffs=reviewSpendingTreatments["Unplanned one-off"];
   const reviewUnderlyingSpending=reviewSpendingTreatments.Recurring+reviewSpendingTreatments["Normal variable"];
   const reviewCycleAnnotation=cycleAnnotations[reviewCycleKey]??{kind:"Normal" as const,excludeFromBaseline:false};
   const reviewSaved=netSavingsMovement(reviewCycleTransactions.filter(isPayYourselfFirstMovement));
-  const reviewCategorySpend=Object.entries(reviewCycleTransactions.filter(transaction=>participatesInOverview(transaction,accountCoverage,store.imports)&&transaction.amount<0&&!isExcludedFromSpending(transaction)).reduce<Record<string,number>>((result,transaction)=>{result[transaction.category]=(result[transaction.category]||0)-transaction.amount;return result},{})).sort(([,a],[,b])=>b-a);
+  const reviewCategorySpend=Object.entries(groupedPersonalSpending(reviewCycleTransactions.filter(transaction=>participatesInOverview(transaction,accountCoverage,store.imports)))).sort(([,a],[,b])=>b-a);
   const reviewTopCategory=reviewCategorySpend[0];
-  const reviewNeedsReview=reviewCycleTransactions.filter(transaction=>participatesInOverview(transaction,accountCoverage,store.imports)&&transaction.amount<0&&!isExcludedFromSpending(transaction)&&needsReview(transaction)).length;
+  const reviewNeedsReview=reviewCycleTransactions.filter(transaction=>participatesInOverview(transaction,accountCoverage,store.imports)&&personalSpendingAmount(transaction)!==0&&needsReview(transaction)).length;
   const reviewCycleCoverage=coverageForCycle(reviewCycleKey);const reviewCycleComplete=cycleHasFullCoverage(reviewCycleKey);const reviewCloseout=(store.cycleCloseouts??[]).find(closeout=>closeout.cycle===reviewCycleKey);const reviewCloseoutNote=closeoutNotes[reviewCycleKey]??reviewCloseout?.note??"";
   const reviewPayslip=payslipForCycle(store.payslips??[],reviewCycleKey);
   const reviewChecks=reviewReadiness({coverageComplete:reviewCycleCoverage.complete,missingAccounts:reviewCycleCoverage.accounts.filter(account=>!account.complete).map(account=>account.name),payslipRecorded:Boolean(reviewPayslip),unreviewed:reviewNeedsReview});
@@ -788,30 +760,30 @@ export default function Home() {
     {key:"backup",label:"Safety backup",value:backupStatusLabel,status:backupDue?"attention":"good",action:"Download"},
   ] as const;
   const reviewDataHealthReady=reviewDataHealthChecks.filter(check=>check.status==="good").length;
-  const priorReviewCycle=monthly.map(([key])=>key).filter(key=>key<reviewCycleKey&&cycleHasFullCoverage(key)&&!cycleAnnotations[key]?.excludeFromBaseline).at(-1)??"";
-  const priorReviewSummary=monthly.find(([key])=>key===priorReviewCycle)?.[1];
+  const priorReviewCycle=cycleSummaries.map(([key])=>key).filter(key=>key<reviewCycleKey&&cycleHasFullCoverage(key)&&!cycleAnnotations[key]?.excludeFromBaseline).at(-1)??"";
+  const priorReviewSummary=cycleSummaries.find(([key])=>key===priorReviewCycle)?.[1];
   const reviewSpendChange=priorReviewSummary?reviewCycleSummary.spend-priorReviewSummary.spend:0;
   const snapshotCashChange=cashChange(snapshots);
   const reviewComparisonLabel=priorReviewSummary?`Compared with ${cycleLabel(priorReviewCycle,payday,salaryDates)}`:"First comparable cycle";
   const reviewSpendSentence=!priorReviewSummary?`${gbp.format(reviewCycleSummary.spend)} of spending is recorded for this cycle.`:reviewSpendChange===0?"Spending was unchanged from the last normal cycle.":`Spending was ${gbp.format(Math.abs(reviewSpendChange))} ${reviewSpendChange>0?"higher":"lower"} than the last normal cycle.`;
   const reviewMonthlyNarrative=[
     reviewSpendSentence,
-    reviewSaved>0?`${gbp.format(reviewSaved)} was paid to savings and investments.`:reviewSaved<0?`${gbp.format(Math.abs(reviewSaved))} was drawn back from savings.`:"No pay-yourself-first movement is recorded.",
+    reviewSaved>0?`${gbp.format(reviewSaved)} was paid to savings and investments.`:reviewSaved<0?`${gbp.format(Math.abs(reviewSaved))} was drawn back from savings.`:savingsTotals(reviewCycleTransactions).count?"Savings deposits and withdrawals netted to zero.":"No pay-yourself-first movement is recorded.",
     snapshotCashChange?`The latest cash snapshot is ${gbp.format(Math.abs(snapshotCashChange))} ${snapshotCashChange>0?"higher":"lower"}.`:"Another balance snapshot will establish the cash trend.",
     reviewTopCategory?`${reviewTopCategory[0]} was the largest category at ${gbp.format(reviewTopCategory[1])}.`:"",
   ].filter(Boolean).join(" ");
   const reviewActionTitle=reviewNeedsReview?"Finish the unclear transactions.":liquidForEmergency<threeMonthFund?"Keep building accessible cash.":"Confirm the month and stay consistent.";
   const reviewActionCopy=reviewNeedsReview?`${reviewNeedsReview} item${reviewNeedsReview===1?"":"s"} can still distort the budget.`:`Emergency cash after card debt is ${gbp.format(liquidForEmergency)} against a ${gbp.format(threeMonthFund)} three-month target.`;
-  const overviewPriorComparableCycle=monthly.map(([key])=>key).filter(key=>key<overviewCycleKey&&cycleHasFullCoverage(key)&&!cycleAnnotations[key]?.excludeFromBaseline).at(-1)??"";
-  const overviewPriorSummary=monthly.find(([key])=>key===overviewPriorComparableCycle)?.[1];
+  const overviewPriorComparableCycle=cycleSummaries.map(([key])=>key).filter(key=>key<overviewCycleKey&&cycleHasFullCoverage(key)&&!cycleAnnotations[key]?.excludeFromBaseline).at(-1)??"";
+  const overviewPriorSummary=cycleSummaries.find(([key])=>key===overviewPriorComparableCycle)?.[1];
   const overviewSpendChange=overviewPriorSummary?overviewSpending-overviewPriorSummary.spend:0;
-  const overviewSavingsPhrase=overviewSavings>0?`${gbp.format(overviewSavings)} has gone to savings and investments.`:overviewSavings<0?`${gbp.format(Math.abs(overviewSavings))} has been drawn back from savings.`:"No pay-yourself-first movement is recorded yet.";
+  const overviewSavingsPhrase=overviewSavings>0?`${gbp.format(overviewSavings)} has gone to savings and investments.`:overviewSavings<0?`${gbp.format(Math.abs(overviewSavings))} has been drawn back from savings.`:savingsTotals(overviewCycleTransactions).count?"Savings deposits and withdrawals net to zero.":"No pay-yourself-first movement is recorded yet.";
   const overviewComparisonSentence=!overviewPriorSummary?`${gbp.format(overviewSpending)} was spent.`:overviewSpendChange===0?"Spending was unchanged from the last normal cycle.":`Spending was ${gbp.format(Math.abs(overviewSpendChange))} ${overviewSpendChange>0?"higher":"lower"} than the last normal cycle.`;
   const homeChangeSummary=!overviewFlowReady?"Import current-account activity to start this cycle’s story.":overviewDataState==="partial"?`${gbp.format(overviewSpending)} has been spent so far. ${overviewSavingsPhrase}`:`${overviewComparisonSentence} ${overviewSavingsPhrase}`;
   const healthHistory=useMemo(()=>snapshots.filter(snapshot=>comparableCash(snapshot)!==undefined).map(snapshot=>{
     const version=snapshot.healthScoreVersion??1;if(version===4){const inputs=snapshot.healthInputs??{};return {date:snapshot.date,score:snapshot.healthScore??calculateHealthScore(inputs,4),version,estimated:snapshot.healthScore===undefined,inputs}}
-    const assets=snapshot.netWorth+snapshot.debt;const historicalDebtRatio=assets?snapshot.debt/assets*100:0;const historicalCashProgress=snapshot.healthInputs?.cashProgress??(emergencyGoal.target>0?Math.min(Math.max(0,snapshot.cash)/emergencyGoal.target*100,100):0);const cycleKey=payCycleKey(snapshot.date,payday,salaryDates);const cycle=monthly.find(([key])=>key===cycleKey)?.[1];const historicalSavingsRate=snapshot.healthInputs?.savingsRate??(cycle?.income?Math.max(0,(cycle.income-cycle.spend)/cycle.income*100):0);const historicalInputs={cashProgress:historicalCashProgress,savingsRate:historicalSavingsRate,cashFlowMargin:snapshot.healthInputs?.cashFlowMargin??historicalSavingsRate,debtRatio:snapshot.healthInputs?.debtRatio??historicalDebtRatio};const score=snapshot.healthScore??calculateHealthScore(historicalInputs,version);return {date:snapshot.date,score,version,estimated:snapshot.healthScore===undefined,inputs:historicalInputs}
-  }),[snapshots,emergencyGoal.target,payday,salaryDates,monthly]);
+    const assets=snapshot.netWorth+snapshot.debt;const historicalDebtRatio=assets?snapshot.debt/assets*100:0;const historicalCashProgress=snapshot.healthInputs?.cashProgress??(emergencyGoal.target>0?Math.min(Math.max(0,snapshot.cash)/emergencyGoal.target*100,100):0);const cycleKey=payCycleKey(snapshot.date,payday,salaryDates);const cycle=cycleSummaries.find(([key])=>key===cycleKey)?.[1];const historicalSavingsRate=snapshot.healthInputs?.savingsRate??(cycle?.income?Math.max(0,(cycle.income-cycle.spend)/cycle.income*100):0);const historicalInputs={cashProgress:historicalCashProgress,savingsRate:historicalSavingsRate,cashFlowMargin:snapshot.healthInputs?.cashFlowMargin??historicalSavingsRate,debtRatio:snapshot.healthInputs?.debtRatio??historicalDebtRatio};const score=snapshot.healthScore??calculateHealthScore(historicalInputs,version);return {date:snapshot.date,score,version,estimated:snapshot.healthScore===undefined,inputs:historicalInputs}
+  }),[snapshots,emergencyGoal.target,payday,salaryDates,cycleSummaries]);
   const previousHealthInputs=[...snapshots].reverse().find(snapshot=>snapshot.cashBasis==="net-cash-v2"&&snapshot.healthScoreVersion===HEALTH_SCORE_VERSION&&snapshot.healthInputs)?.healthInputs;
   const healthMovement=explainHealthMovement(currentHealthInputs,previousHealthInputs);
   const liveScoreDate=new Date().toISOString().slice(0,10);
@@ -832,7 +804,7 @@ export default function Home() {
   const latestPayslip=payslips[0];const latestPayrollMonth=payrollMonths[0];const selectedPayslip=payslips.find(p=>p.id===selectedPayslipId)||latestPayslip;const maxPayslip=Math.max(...payrollMonths.map(month=>month.netPay),1);
   function setDetailKey(key:DetailKey|null){setDetailKeyState(key)}
   const detailMap:Record<DetailKey,{eyebrow:string;title:string;description:string;rows:{label:string;value:string;note?:string}[]}>={
-    health:{eyebrow:"FINANCIAL HEALTH · V4",title:healthReadiness.ready?`${healthScore}/100 — ${healthAssessment.status}`:"—",description:healthAssessment.summary,rows:!healthReadiness.ready?[{label:"Data confidence",value:"Insufficient",note:healthAssessment.summary},{label:"Still needed",value:healthAssessment.missing.join(", ")||"Nothing",note:"The score appears only when all three core components are trustworthy."}]:[...healthAssessment.components.map(item=>({label:item.label,value:`${Math.round(item.points)}/${item.available}`,note:item.explanation})),{label:"Strongest factor",value:healthAssessment.strongestFactor?.label??"Not available",note:healthAssessment.positiveFactors[0]},{label:"Biggest opportunity",value:healthAssessment.biggestRisk?.label??"Not available",note:healthAssessment.riskFactors[0]??healthAssessment.actions[0]},{label:"Source period",value:healthAssessment.source.label??"Not available",note:`${healthAssessment.confidence} confidence${healthAssessment.source.balancesAsOf?` · balances as of ${formatCoverageDate(healthAssessment.source.balancesAsOf)}`:""}`}]},
+    health:{eyebrow:"FINANCIAL HEALTH · V4",title:healthReadiness.ready?`${healthScore}/100 — ${healthAssessment.status}`:"—",description:healthAssessment.summary,rows:!healthReadiness.ready?[{label:"Data confidence",value:"Insufficient",note:healthAssessment.summary},{label:"Still needed",value:healthAssessment.missing.join(", ")||"Nothing",note:"The score appears only when all three core components are trustworthy."}]:[...healthAssessment.components.map(item=>({label:item.label,value:`${Math.round(item.points)}/${item.available}`,note:item.explanation})),{label:"Strongest factor",value:healthAssessment.strongestFactor?.label??"Not available",note:healthAssessment.strongestFactor?.positiveFactors?.[0]},{label:"Biggest opportunity",value:healthAssessment.biggestRisk?.label??"Not available",note:healthAssessment.biggestRisk?.riskFactors?.[0]??healthAssessment.biggestRisk?.actions?.[0]},{label:"Source period",value:healthAssessment.source.label??"Not available",note:`${healthAssessment.confidence} confidence${healthAssessment.source.balancesAsOf?` · balances as of ${formatCoverageDate(healthAssessment.source.balancesAsOf)}`:""}`}]},
     cashflow:{eyebrow:"LATEST PAY CYCLE",title:gbp.format(latestMonth.income-latestMonth.spend),description:cycleLabel(latestCycleKey,payday,salaryDates),rows:[{label:"Income",value:gbp.format(latestMonth.income)},{label:"True spending",value:gbp.format(latestMonth.spend)},{label:"Transactions",value:String(latestCycleTransactions.length),note:"Transfers and card repayments excluded from spending"}]},
     growth:{eyebrow:"NET-WORTH GROWTH",title:`${netGrowth>=0?"+":""}${gbp.format(netGrowth)}`,description:"Change from your first saved snapshot to the current balance sheet.",rows:[{label:"Starting snapshot",value:gbp.format(snapshots[0]?.netWorth??totals.net)},{label:"Current net worth",value:gbp.format(totals.net)},{label:"Snapshots saved",value:String(snapshots.length)}]},
     assets:{eyebrow:"TOTAL ASSETS",title:gbp.format(totals.assets),description:"Every tracked asset before liabilities.",rows:store.balances.filter(b=>b.group==="asset").sort((a,b)=>b.value-a.value).map(b=>({label:b.name,value:gbp.format(b.value),note:b.type}))},
@@ -842,7 +814,7 @@ export default function Home() {
     pensions:{eyebrow:"PENSIONS",title:gbp.format(totals.pension),description:"Current pension balances plus the latest recorded workplace contributions.",rows:[...store.balances.filter(b=>accountKind(b)==="pension").map(b=>({label:b.name,value:gbp.format(b.value),note:"Current balance"})),...(latestPayslip?[{label:"Latest employee contribution",value:gbpExact.format(latestPayslip.employeePension),note:regional.formatDate(latestPayslip.payDate,{month:"long",year:"numeric"})},{label:"Latest employer contribution",value:gbpExact.format(latestPayslip.employerPension),note:"Paid on top of salary"}]:[])]},
     equity:{eyebrow:"PROPERTY EQUITY",title:gbp.format(propertyEquity(store.balances)),description:"Property valuations less the two tracked mortgages.",rows:[{label:store.balances.find(b=>b.id==="home")?.name??"Home",value:gbp.format((store.balances.find(b=>b.id==="home")?.value??0)-(store.balances.find(b=>b.id==="mortgage")?.value??0))},{label:store.balances.find(b=>b.id==="rental")?.name??"Rental property",value:gbp.format((store.balances.find(b=>b.id==="rental")?.value??0)-(store.balances.find(b=>b.id==="rental-mortgage")?.value??0))},{label:"Combined mortgages",value:gbp.format(mortgageDebtBalance(store.balances))}]},
     runway:{eyebrow:"EMERGENCY RUNWAY",title:`${(liquidForEmergency/essentialsTotal).toFixed(1)} months`,description:"Cash after card debt, divided by your planned monthly essentials. Stocks & Shares ISAs are excluded; Cash ISAs are included.",rows:[{label:"Cash",value:gbp.format(totals.cash)},{label:"Less card debt",value:`−${gbp.format(totals.cardDebt)}`},{label:"Emergency cash",value:gbp.format(liquidForEmergency)},{label:"ISA (shown separately)",value:gbp.format(totals.isa),note:"Not counted in runway"},{label:"Planned essentials",value:gbp.format(essentialsTotal)},{label:"Three-month target",value:gbp.format(threeMonthFund)}]},
-    payslip:{eyebrow:"PAYSLIP BREAKDOWN",title:selectedPayslip?gbpExact.format(selectedPayslip.netPay):"No payslip",description:selectedPayslip?`${selectedPayslip.employer?`${selectedPayslip.employer} · `:""}${regional.formatDate(selectedPayslip.payDate,{day:"numeric",month:"long",year:"numeric"})}${isFeaturePackEnabled(store.profile,"uk-tax")?` · Tax code ${selectedPayslip.taxCode}`:""}`:"Upload a payslip to begin",rows:selectedPayslip?[{label:"Gross salary",value:gbpExact.format(selectedPayslip.salary)},{label:"Total earnings",value:gbpExact.format(selectedPayslip.cashEarnings)},...(selectedPayslip.annualLeavePayout?[{label:"Annual leave payout",value:gbpExact.format(selectedPayslip.annualLeavePayout),note:"One-off final-pay item"}]:[]),{label:"Salary sacrifice pension",value:gbpExact.format(selectedPayslip.employeePension)},{label:"Employer pension",value:gbpExact.format(selectedPayslip.employerPension),note:"Paid on top of salary"},{label:isFeaturePackEnabled(store.profile,"uk-tax")?"PAYE tax":"Tax deducted",value:gbpExact.format(selectedPayslip.tax)},{label:"National Insurance",value:gbpExact.format(selectedPayslip.ni)},{label:"Net pay",value:gbpExact.format(selectedPayslip.netPay),note:selectedPayslip.fileName}]:[]},
+    payslip:{eyebrow:"PAYSLIP BREAKDOWN",title:selectedPayslip?gbpExact.format(selectedPayslip.netPay):"No payslip",description:selectedPayslip?`${selectedPayslip.employer?`${selectedPayslip.employer} · `:""}${regional.formatDate(selectedPayslip.payDate,{day:"numeric",month:"long",year:"numeric"})}${isFeaturePackEnabled(store.profile,"uk-tax")?` · Tax code ${selectedPayslip.taxCode}`:""}`:"Upload a payslip to begin",rows:selectedPayslip?[{label:"Gross salary",value:gbpExact.format(selectedPayslip.salary)},{label:"Total earnings",value:gbpExact.format(selectedPayslip.cashEarnings)},...(selectedPayslip.annualLeavePayout?[{label:"Annual leave payout",value:gbpExact.format(selectedPayslip.annualLeavePayout),note:"One-off final-pay item"}]:[]),{label:"Your pension contribution",value:gbpExact.format(selectedPayslip.employeePension)},{label:"Employer pension",value:gbpExact.format(selectedPayslip.employerPension),note:"Paid on top of salary"},{label:isFeaturePackEnabled(store.profile,"uk-tax")?"PAYE tax":"Tax deducted",value:gbpExact.format(selectedPayslip.tax)},{label:"National Insurance",value:gbpExact.format(selectedPayslip.ni)},{label:"Net pay",value:gbpExact.format(selectedPayslip.netPay),note:selectedPayslip.fileName}]:[]},
   };
   const assetMix = useMemo(() => {
     const grouped=store.balances.filter(b=>b.group==="asset").reduce<Record<string,number>>((a,b)=>{const k=b.type==="Property"?"Property":b.type==="Pension"?"Pensions":b.type==="VCT"?"VCTs":"Accessible";a[k]=(a[k]||0)+b.value;return a},{});
@@ -874,19 +846,20 @@ export default function Home() {
   function closeCycle(key:string){
     if(key===currentCycleKey){setNotice("The live cycle can be reviewed now, but it closes only after the next salary arrives.");setTimeout(()=>setNotice(""),4500);return}
     if(!cycleHasFullCoverage(key)){setNotice("Import or confirm activity for each required account before closing this cycle.");setTimeout(()=>setNotice(""),5000);return}
-    const transactions=resolvedTransactions.filter(transaction=>transactionCycleKey(transaction,payday,salaryDates)===key);const personalSpend=transactions.filter(transaction=>transaction.amount<0&&!isExcludedFromSpending(transaction)&&!isRentalMortgage(transaction)&&!isRentalCategory(transaction)).reduce((sum,transaction)=>sum-transaction.amount,0);const rentalMortgage=transactions.filter(transaction=>transaction.amount<0&&isRentalMortgage(transaction)).reduce((sum,transaction)=>sum-transaction.amount,0);const rentalIncome=transactions.filter(rentalIncomeTransaction).reduce((sum,transaction)=>sum+transaction.amount,0);
-    const income=monthly.find(([cycle])=>cycle===key)?.[1].income??transactions.filter(transaction=>transaction.amount>0&&transaction.categoryGroup==="income").reduce((sum,transaction)=>sum+transaction.amount,0);const payYourselfFirst=netSavingsMovement(transactions.filter(isPayYourselfFirstMovement));const cashFlow=income-personalSpend-rentalMortgage;const unallocated=cashFlow-payYourselfFirst;const unreviewed=transactions.filter(transaction=>transaction.amount<0&&!isExcludedFromSpending(transaction)&&needsReview(transaction)).length;
+    const transactions=resolvedTransactions.filter(transaction=>transactionCycleKey(transaction,payday,salaryDates)===key&&participatesInOverview(transaction,accountCoverage,store.imports));const personalSpend=personalSpendingTotal(transactions.filter(transaction=>!isRentalMortgage(transaction)&&!isRentalCategory(transaction)));const rentalMortgage=personalSpendingTotal(transactions.filter(isRentalMortgage));const rentalOperatingSpend=personalSpendingTotal(transactions.filter(transaction=>isRentalCategory(transaction)&&!isRentalMortgage(transaction)));const rentalIncome=transactions.filter(rentalIncomeTransaction).reduce((sum,transaction)=>sum+transaction.amount,0);
+    const income=cycleSummaries.find(([cycle])=>cycle===key)?.[1].income??transactions.filter(transaction=>transaction.amount>0&&transaction.categoryGroup==="income").reduce((sum,transaction)=>sum+transaction.amount,0);const payYourselfFirst=netSavingsMovement(transactions.filter(isPayYourselfFirstMovement));const cashFlow=income-personalSpend-rentalMortgage-rentalOperatingSpend;const unallocated=cashFlow-payYourselfFirst;const unreviewed=transactions.filter(transaction=>personalSpendingAmount(transaction)!==0&&needsReview(transaction)).length;
     const cycleCoverage=coverageForCycle(key);const checks=reviewReadiness({coverageComplete:cycleCoverage.complete,missingAccounts:cycleCoverage.accounts.filter(account=>!account.complete).map(account=>account.name),payslipRecorded:Boolean(payslipForCycle(store.payslips??[],key)),unreviewed});
     if(!checks.ready){setNotice(`Before closing: ${checks.missing.join(", ")}.`);return;}
     const existing=(store.cycleCloseouts??[]).find(item=>item.cycle===key);const note=(closeoutNotes[key]??existing?.note??"").trim();const now=new Date().toISOString();const date=now.slice(0,10);
-    const closeout:CycleCloseout={cycle:key,closedAt:now,income,personalSpend,rentalIncome,rentalMortgage,cashFlow,payYourselfFirst,unallocated,spendingPlan,planVariance:spendingPlan-personalSpend,unreviewed,note,currentAccount:totals.currentAccount,netWorth:totals.net};const snapshot:Snapshot={...createBalanceSnapshot(store.balances,date),...(healthReadiness.ready?{healthScore,healthScoreVersion:HEALTH_SCORE_VERSION,healthInputs:currentHealthInputs}:{})};
+    const closeout:CycleCloseout={cycle:key,closedAt:now,income,personalSpend,rentalIncome,rentalMortgage,rentalOperatingSpend,cashFlow,payYourselfFirst,unallocated,spendingPlan,planVariance:spendingPlan-personalSpend,unreviewed,note,currentAccount:totals.currentAccount,netWorth:totals.net};const snapshot:Snapshot={...createBalanceSnapshot(store.balances,date),...(healthReadiness.ready?{healthScore,healthScoreVersion:HEALTH_SCORE_VERSION,healthInputs:currentHealthInputs}:{})};
     const next=storeWithBackupTimestamp({...store,cycleCloseouts:[closeout,...(store.cycleCloseouts??[]).filter(item=>item.cycle!==key)].sort((a,b)=>b.closedAt.localeCompare(a.closedAt)),snapshots:[...(store.snapshots??[]).filter(item=>item.date!==date||item.healthScoreVersion!==HEALTH_SCORE_VERSION),snapshot].sort((a,b)=>a.date.localeCompare(b.date)),updatedAt:date},now);
     setStore(next);downloadStoreBackup(next,`personal-cfo-${key}-closeout.json`);
     setNotice(`${cycleLabel(key,payday,salaryDates)} ${existing?"closeout refreshed":"closed"}. The summary, net-worth snapshot and safety backup are saved.`);setTimeout(()=>setNotice(""),6000)
   }
   function closeSelectedCycle(){closeCycle(selectedBudgetCycle)}function closeReviewCycle(){closeCycle(reviewCycleKey)}
   function reopenReviewCycle(){if(!reviewCloseout||!confirm(`Reopen ${cycleLabel(reviewCycleKey,payday,salaryDates)}? The saved closeout will be removed, but transactions and snapshots will remain.`))return;setStore(s=>({...s,cycleCloseouts:(s.cycleCloseouts??[]).filter(item=>item.cycle!==reviewCycleKey),updatedAt:new Date().toISOString().slice(0,10)}));setNotice(`${cycleLabel(reviewCycleKey,payday,salaryDates)} reopened. Its transactions and snapshot are unchanged.`);setTimeout(()=>setNotice(""),4500)}
-  function confirmCardCoverageThrough(key:string){const through=cycleBounds(key,payday,salaryDates).end;const confirmedAt=new Date().toISOString();setStore(s=>{const credit=configuredAccountCoverage(s).credit;return {...s,accountCoverageConfirmations:{...(s.accountCoverageConfirmations??{}),[key]:Object.fromEntries(credit.map(account=>[account.accountId,{through,confirmedAt}]))},updatedAt:confirmedAt.slice(0,10)}});setNotice(`Credit-card activity confirmed through ${formatCoverageDate(through)}. The raw transactions remain unchanged.`);setTimeout(()=>setNotice(""),5000)}function updateMortgagePlanner(field:keyof MortgagePlanner,value:number){setStore(s=>({...s,mortgagePlanner:{...(s.mortgagePlanner??baselineMortgagePlanner),[field]:Math.max(0,value)},updatedAt:new Date().toISOString().slice(0,10)}))}
+  function confirmReviewAccount(key:string,accountId:string){try{const bounds=cycleBounds(key,payday,salaryDates),now=new Date().toISOString(),reviewed=confirmAccountReview(store,key,accountId,bounds,now);const entry=reviewed.accountCoverageConfirmations![key][accountId];setStore(s=>({...s,accountCoverageConfirmations:{...s.accountCoverageConfirmations,[key]:{...s.accountCoverageConfirmations?.[key],[accountId]:entry}},updatedAt:now.slice(0,10)}));setNotice(`Account activity reviewed through ${formatCoverageDate(bounds.end)}.`)}catch(error){setNotice(error instanceof Error?error.message:"Review could not be recorded.")}}
+  function confirmCardCoverageThrough(key:string){try{const bounds=cycleBounds(key,payday,salaryDates),now=new Date().toISOString();const reviewed=configuredAccountCoverage(store).credit.reduce((next,account)=>confirmAccountReview(next,key,account.accountId,bounds,now),store);const entries=reviewed.accountCoverageConfirmations?.[key];setStore(s=>({...s,accountCoverageConfirmations:{...s.accountCoverageConfirmations,[key]:{...s.accountCoverageConfirmations?.[key],...entries}},updatedAt:now.slice(0,10)}));setNotice(`Credit-card activity reviewed through ${formatCoverageDate(bounds.end)}.`)}catch(error){setNotice(error instanceof Error?error.message:"Review could not be recorded.")}}function updateMortgagePlanner(field:keyof MortgagePlanner,value:number){setStore(s=>({...s,mortgagePlanner:{...(s.mortgagePlanner??baselineMortgagePlanner),[field]:Math.max(0,value)},updatedAt:new Date().toISOString().slice(0,10)}))}
   async function prepareMortgageStatement(file:File){
     try{
       if(!file.name.toLowerCase().endsWith(".csv"))throw new Error("Choose a CSV mortgage statement.");
@@ -1010,6 +983,12 @@ export default function Home() {
   async function importBarclaycard(file:File,accountId?:string){setImportBusy(true);try{const parsed=barclaycardImporter.normalise(await barclaycardImporter.preview(file,undefined));if(!parsed.transactions.length)throw new Error("No transactions found");const eligible=store.profile?.accounts.filter(account=>account.kind==="credit-card")??[];const destination=accountId??(store.profile?.origin==="fresh"&&eligible.length===1?eligible[0].id:store.profile?.origin==="fresh"?undefined:"barclaycard-debt");if(!destination||store.profile?.origin==="fresh"&&!eligible.some(account=>account.id===destination))throw new Error("Choose a credit-card account for this import.");prepareImport(normaliseBarclaycardImport(parsed,file.name,store.profile,destination),file)}catch(error){const detail=error instanceof Error?error.message:"Unknown statement error";const pdfHelp=file.name.toLowerCase().endsWith(".pdf")?" Restart the background app once if the private PDF reader is unavailable.":" Use the original Barclaycard CSV; both headed and headerless exports are supported.";setImportError(`I could not read that Barclaycard statement (${detail}).${pdfHelp}`);setPendingImport(null)}finally{setImportBusy(false)}}
   function emptyPayslipDraft(fileName="Manual payslip"):PayslipDraft{return {fileName,payDate:"",salary:"",cashEarnings:"",tax:"",ni:"",netPay:"",employeePension:"",employerPension:"",espp:"",esppRefund:"",annualLeavePayout:"",rsuGain:"",rsuTaxCredit:"",taxCode:""}}
   function filenamePayDate(fileName:string){return fileName.match(/\b(20\d{2})[-_](\d{2})[-_](\d{2})\b/)?.slice(1,4).join("-")??""}
+  function savePayslipToHistory(payslip:PayslipRecord){
+    const saved=mergeImportedPayslip(store.payslips??[],payslip,store.profile?.taxEmployers).find(record=>record.payDate===payslip.payDate&&record.fileName===payslip.fileName&&record.employer===payslip.employer);
+    setStore(s=>({...s,payslips:mergeImportedPayslip(s.payslips??[],payslip,s.profile?.taxEmployers),updatedAt:new Date().toISOString().slice(0,10)}));
+    setPayslipDraft(null);setSelectedPayslipId(saved?.id??null);if(tab!=="Monthly Review")navigateToTab("Income");setDetailKey("payslip");
+    setNotice(`Saved ${payslip.employer||"employer"} payslip · ${regional.formatDate(payslip.payDate,{day:"numeric",month:"long",year:"numeric"})}.`);setTimeout(()=>setNotice(""),6000);
+  }
   function saveManualPayslip(){
     if(!payslipDraft)return;
     const number=(value:string)=>Math.abs(statementMoney(value)||0);
@@ -1018,10 +997,9 @@ export default function Home() {
     const employeePension=number(payslipDraft.employeePension);
     let taxEvidence:Partial<PayslipRecord>;try{taxEvidence=manualPayslipTaxEvidence(payslipDraft,store.profile?.taxEmployers)}catch(error){setNotice(error instanceof Error?error.message:"Check tax fields");return}
     const payslip:PayslipRecord={...taxEvidence,id:`payslip-${payslipDraft.payDate}`,fileName:payslipDraft.fileName||"Manual payslip",payDate:payslipDraft.payDate,salary,cashEarnings:number(payslipDraft.cashEarnings)||(salary-employeePension),tax:taxEvidence.tax??number(payslipDraft.tax),ni:number(payslipDraft.ni),netPay,employeePension,employerPension:number(payslipDraft.employerPension),espp:number(payslipDraft.espp),esppRefund:number(payslipDraft.esppRefund)||undefined,annualLeavePayout:number(payslipDraft.annualLeavePayout)||undefined,rsuGain:number(payslipDraft.rsuGain),rsuTaxCredit:number(payslipDraft.rsuTaxCredit),taxCode:payslipDraft.taxCode.trim()||"Unknown"};
-    setStore(s=>({...s,payslips:mergeImportedPayslip(s.payslips??[],payslip,s.profile?.taxEmployers),updatedAt:new Date().toISOString().slice(0,10)}));
-    setPayslipDraft(null);setNotice(`Payslip for ${regional.formatDate(payslip.payDate,{month:"long",year:"numeric"})} saved locally.`);setTimeout(()=>setNotice(""),4500)
+    savePayslipToHistory(payslip)
   }
-  async function importPayslip(file:File){try{const parsed=await parsePayslip(file);const payslip={...parsed,employerId:taxEmployer(parsed.employer,parsed.id,store.profile?.taxEmployers).id};setStore(s=>({...s,payslips:mergeImportedPayslip(s.payslips??[],payslip,s.profile?.taxEmployers),updatedAt:new Date().toISOString().slice(0,10)}));setPayslipDraft(null);setNotice(`Payslip for ${regional.formatDate(payslip.payDate,{month:"long",year:"numeric"})} added.`);setTimeout(()=>setNotice(""),4500)}catch(error){console.error("Payslip import failed",error);setPayslipDraft({...emptyPayslipDraft(file.name),payDate:filenamePayDate(file.name)});navigateToTab("Update");setNotice("This PDF uses a layout the automatic reader could not decode. Enter the figures in the payslip form below; nothing has been added yet.");setTimeout(()=>setNotice(""),7500)}}
+  async function importPayslip(file:File){try{const parsed=await parsePayslip(file);savePayslipToHistory({...parsed,employerId:taxEmployer(parsed.employer,parsed.id,store.profile?.taxEmployers).id})}catch(error){console.error("Payslip import failed",error);setPayslipDraft({...emptyPayslipDraft(file.name),payDate:filenamePayDate(file.name)});if(tab==="Monthly Review")setReviewTask("payslip");else navigateToTab("Income");setNotice("This PDF uses a layout the automatic reader could not decode. Enter the figures in the payslip form below; nothing has been added yet.");setTimeout(()=>setNotice(""),7500)}}
   function downloadStoreBackup(source:Store,fileName:string){const blob=new Blob([serialiseBackup(source)],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=fileName;a.click();URL.revokeObjectURL(a.href)}
   function exportData() { const now=new Date().toISOString();const next=storeWithBackupTimestamp(store,now);setStore(next);downloadStoreBackup(next,`personal-cfo-backup-${now.slice(0,10)}.json`);setNotice("Safety backup downloaded and recorded.");setTimeout(()=>setNotice(""),3500) }
   async function resetWithBackup(){if(!confirm("For safety, the app will download a backup before resetting. Continue?"))return;exportData();if(confirm("Backup downloaded. Reset all local data to the baseline now?")){try{await deleteFinanceDatabase();localStorage.removeItem(LOCAL_STORE_KEY);location.reload()}catch(error){setStorageError(error instanceof Error?error.message:"The local database could not be reset.")}}}
@@ -1037,6 +1015,10 @@ export default function Home() {
   const transactionsScreenProps = { accountFilter, allBusinessExpenses, applyMerchantClassification, availableSubcategories, breakdownSpend, categories, category, coverage, currentCycleKey, cycleAnnotations, cycleBounds, cycleKeys, cycleLabel, displayedTransactions, filtered, gbp, gbpExact, income, inferSubcategory, isInternalPotTransfer, latestDataCycleKey, maxCategory, maxMonth, monthly, payday, period, periodTransactions, query, salaryDates, selectedBusinessExpenses, selectedPeriodLabel, setAccountFilter, setCategory, setNewSubcategory, setPeriod, setQuery, setSubcategoryDialog, setSubcategoryFilter, setTab:navigateToTab, setTxLimit, setTxView, spending, spendingTreatmentFor, store:displayStore, subcategoryFilter, subcategorySpend, tab, txLimit, txView, uncategorised, updateSpendingTreatment };
   const planScreenProps = { applyRecommendedBudget, averageFor, balanceReconciliations, baseMortgage, baselineMonthlyActual, baselineSinkingFunds, budgetCycle, budgetRemaining, budgetUsed, cashProgress, challengeBalanceDate, challengeBalanceInput, closeSelectedCycle, completedCycleKeys, completedCycleReview, confirmCardCoverageThrough, coverage, currentBalanceKnown, currentSavingsChallenge, cycleCloseouts, cycleKeys, cycleLabel, duplicateGroups, emergencyContribution, emergencyGap, emergencyGoal, emergencyMonths, employeePensionEstimate, employerPension, essentialCategories, essentialPlan, essentialsTotal, feeTransactions, fixedCommitmentExpected, fixedCommitmentPaid, fixedCommitmentReserved, fixedCommitments, flexCoveredCategories, flexibleBuffer, formatCoverageDate, futurePlan, futureTotal, gbp, gbpExact, housingEvidence, importError, increasedDirectDebits, investedAfterEarlyPayoff, investedAlternative, investmentContributions, investmentGrowth, isRentalMortgage, isExcludedFromSpending, lastCompletedCycleKey, lastPlanCycleKey, latestBalanceReconciliation, latestMortgageStatement, latestSavingsChallengeTransfer, leakageRate, lifestyleCategories, lifestylePlan, lifestyleRemaining, lifestyleTotal, lifestyleUsed, liquidForEmergency, maxCompletedSpend, maxSavingsChallengeHistory, monzoBalanceTracking, mortgageChartYears, mortgageDate, mortgageImportTarget, mortgageInterestSaved, mortgageMonthsSaved, mortgageSettings, mortgageStatementRef, nextCyclePlanSummary, nonMonthlyDirectDebitReserve, nonMonthlyDirectDebits, ordinalDay, overBudgetCategories, payday, paydayAllocationsMoved, personalDirectDebitTotal, planRows, plannedMortgage, planningIncome, prepareMortgageStatement, recommendedBudgetPlan, recommendedEmergency, recommendedPlanBuffer, recommendedPlanTotal, reconcileActual, reconcileBalance, reconcileDifference, reconcileMonzoCurrentAccount, reconcileReason, remainingVariablePlan, rentalPropertyReserve, rentalPropertySurplus, repeatedSmallGroups, repeatedSmallSpend, resetBudgetPlan, reviewTransactions, reviewableSpend, salaryDates, saveSavingsChallengeBalance, savingsChallengeBalance, savingsChallengeDailyAmount, savingsChallengeHistory, savingsChallengeLatestCycle, savingsChallengeNext31, savingsChallengeNextDaily, savingsChallengeProjectedYear, savingsChallengeReconciliation, savingsChallengeTotal, savingsChallengeTracking, selectedBudgetCategorySpend, selectedBudgetComplete, selectedBudgetCycle, selectedBudgetDataState, selectedBudgetIncome, selectedBudgetSpend, selectedBudgetTransactions, selectedPrimaryMortgageSpend, selectedCloseout, selectedCloseoutNote, selectedCycleCashFlow, selectedCycleCoverage, selectedCycleDataLabel, selectedCycleIsLive, selectedCycleLatestDate, selectedCyclePayslip, selectedCycleRentIncome, selectedCycleSalaryIncome, selectedRentalMortgageSpend, selectedRentalOperatingSpend, selectedEssentialSpend, selectedEveryPoundAllocated, selectedEveryPoundRemaining, selectedFlexibleCashOut, selectedHousingSpend, selectedLifestyleSpend, selectedMortgageHistory, selectedMustPayOut, selectedNonMonthlyCollections, selectedOtherHousingSpend, selectedPayYourselfFirst, selectedPayYourselfFirstProgress, selectedTotalCashOut, selectedTvLicenceSpend, selectedUnreviewed, setBudgetCycle, setCategory, setChallengeBalanceDate, setChallengeBalanceInput, setCloseoutNotes, setMortgageImportTarget, setPeriod, setQuery, setReconcileBalance, setReconcileReason, setStore, setSubcategoryFilter, setTab:navigateToTab, setTxView, spendableBalanceReady, spendingPlan, store, subscriptionSpend, subscriptionTransactions, tab, threeMonthFund, togglePaydayAllocations, totals:legacyAccountTotals, travelEvidenceByCycle, travelPlan, tvLicenceDirectDebit, typicalRentalMortgage, typicalRentalIncome, updateBalance, updateBudgetPlan, updateMortgagePlanner, updateSinkingFund, variableMonthlyActual, variablePlanMargin, variableSpendSoFar, variableSpendingPlan };
   const settingsScreenProps = { activeDirectDebits, addManualTransaction, anchorMonzoBalance, annualDirectDebitTotal, applyMerchantClassification, archiveDirectDebit, archivedDirectDebitCount, availableSubcategories, backupDue, backupRef, backupStatusLabel, cardRef, cashProgress, categories, cycleLabel, dataHealthChecks, dataHealthReady, defaultSubcategories, directDebitHistory, directDebitRows, displayedDirectDebitRows, dragging, rentalMortgageCommitment, emptyPayslipDraft, exportData, fileRef, gbp, gbpExact, activeEmployerAnnualSalary, activeEmployeePensionRate, activeEmployerPensionRate, importCsv, importGenericCsv, importBarclaycard, createImportAccount, latestCardImport, latestMonzoImport, latestPayslip, latestPayrollMonth, manual, maxDirectDebitHistory, maxPayslip, monthlyDirectDebitTotal, monzoBalanceTracking, pauseMonzoBalanceTracking, payCycleKey, payday, payslipDraft, payslipRef, payslips, payrollMonths, persistenceMode, resetWithBackup, salaryDates, saveManualPayslip, saveSnapshot, setBudgetCycle, setCategory, setDetailKey, setDragging, setManual, setPayslipDraft, setPeriod, setSelectedPayslipId, setShowArchivedDirectDebits, setStore, setSubcategoryFilter, setTab:navigateToTab, setTxView, showArchivedDirectDebits, store, tab, totals:legacyAccountTotals, updateBalance, updateDirectDebitSetting };
+  const reviewWorkspaceProps={store:displayStore,setStore,coverage:reviewCycleCoverage,cycleLabel:cycleLabel(reviewCycleKey,payday,salaryDates),onConfirmCoverage:(id:string)=>confirmReviewAccount(reviewCycleKey,id),
+    onGeneric:importGenericCsv,onMonzo:importCsv,onCard:importBarclaycard,onCreateAccount:createImportAccount,onPayslip:importPayslip,payslip:reviewPayslip,onShowPayslip:(record:PayslipRecord)=>{setSelectedPayslipId(record.id);setDetailKey("payslip")},
+    draft:payslipDraft,setDraft:setPayslipDraft,onBlankPayslip:()=>setPayslipDraft(emptyPayslipDraft()),onSavePayslip:saveManualPayslip,updateBalance,transactions:reviewCycleTransactions,needsReview,onClassify:applyMerchantClassification,money:gbp,plan:[...essentialPlan,...lifestylePlan],onUpdatePlan:updateBudgetPlan,planningIncome};
+  function closeReviewTask(){setReviewTask(null);requestAnimationFrame(()=>reviewTaskOpener.current?.focus())}
   const showGuide=setupOpen||(!setupDismissed&&shouldShowOnboarding(store));
   const ukTaxEnabled=isFeaturePackEnabled(store.profile,"uk-tax");
   const toggleUkTax=(enabled:boolean)=>{if(!enabled&&tab==="Tax")navigateToTab("Overview");setStore(current=>{if(!current.profile)return current;const profile=enabled?enableFeaturePack(current.profile,"uk-tax"):disableFeaturePack(current.profile,"uk-tax");return enabled?migrateTaxStore({...current,profile}):{...current,profile}})};
@@ -1079,12 +1061,12 @@ export default function Home() {
       <header>
 <div>
 <p className="eyebrow">PERSONAL FINANCIAL OPERATING SYSTEM</p>
-<h1>{showGuide?"Setup guide":tab==="Overview"?"Home":tab==="Income"?"Payroll & Pension":tab}</h1>
+<h1>{showGuide?"Setup guide":screenTitle(tab)}</h1>
 </div>
 <div className="header-actions">
 <button className="theme-toggle" aria-label={`Switch to ${theme==="dark"?"light":"dark"} theme`} onClick={()=>setTheme(t=>t==="dark"?"light":"dark")}>
 <span>{theme==="dark"?"☀":"☾"}</span>{theme==="dark"?"Light":"Dark"}</button>
-<button className="primary" onClick={()=>navigateToTab("Monthly Review")}>＋ Monthly update</button>
+<AddDataMenu navigate={navigateToTab} uploadPayslip={()=>payslipRef.current?.click()}/>
 <input ref={fileRef} aria-label="Choose a Monzo CSV statement" type="file" accept=".csv,text/csv" hidden onChange={e=>{const file=e.target.files?.[0];if(file)importCsv(file);e.target.value=""}}/>
 <input ref={cardRef} aria-label="Choose a Barclaycard statement" type="file" accept=".csv,.pdf,text/csv,application/pdf" hidden onChange={e=>{const file=e.target.files?.[0];if(file)importBarclaycard(file);e.target.value=""}}/>
 <input ref={payslipRef} aria-label="Choose an employer payslip PDF" type="file" accept=".pdf,application/pdf" hidden onChange={e=>{const file=e.target.files?.[0];if(file)importPayslip(file);e.target.value=""}}/>
@@ -1094,19 +1076,17 @@ export default function Home() {
       {store.demoMode&&<div className="notice" role="status"><span><strong>Fictional demo profile.</strong> Amounts are illustrative and displayed in {regional.region.currency}.</span><button className="ghost" onClick={leaveDemoProfile}>Start with my data</button></div>}
       {showGuide&&<Onboarding store={store} setStore={setStore} step={setupStep} onStep={changeSetupStep} onFinish={()=>{setStore(current=>finishOnboarding(current));setSetupOpen(false);setSetupDismissed(true);setTab("Overview")}} onLeave={()=>{setSetupOpen(false);setSetupDismissed(true)}} onRestore={()=>backupRef.current?.click()} onDemo={loadDemoProfile} onGeneric={importGenericCsv} onMonzo={importCsv} onBarclaycard={importBarclaycard} onCreateAccount={createImportAccount} importError={importError} notice={notice}/>}
       {!showGuide&&emptyFreshView&&activeSection!=="Settings"&&activeSection!=="Tax"&&<article className="panel empty-state"><h2>No dated financial data yet</h2><p>Add a dated account balance or import a statement to begin. Until then, balances and trends are unavailable—not zero.</p><button className="primary" onClick={()=>setSetupOpen(true)}>Continue setup</button></article>}
-      {!showGuide&&<section className={`data-freshness-banner state-${freshnessState}`} aria-label="Dashboard data freshness">
-<div className="freshness-state" aria-hidden="true">{freshnessState==="complete"?"✓":freshnessState==="partial"?"!":"·"}</div>
-<div className="freshness-copy"><strong>{freshnessTitle}</strong><span>These dates show exactly how far each part of the dashboard can be trusted.</span></div>
+      {!showGuide&&<details className={`data-freshness-disclosure state-${freshnessState}`} aria-label="Dashboard data freshness">
+<summary><span className="freshness-state" aria-hidden="true">{freshnessState==="complete"?"✓":freshnessState==="partial"?"!":"·"}</span><strong>{freshnessTitle}</strong><span>View update dates</span></summary>
+<div className="freshness-detail-grid">
 <div className="freshness-source"><span>Current accounts</span><strong>{formatCoverageDate(accountCoverage.currentTo)}</strong></div>
 <div className="freshness-source"><span>Credit cards</span><strong>{accountCoverage.credit.length?formatCoverageDate(accountCoverage.creditTo):"Not required"}</strong></div>
 <div className="freshness-source"><span>Balances</span><strong>{formatCoverageDate(latestSnapshotDate)}</strong></div>
-<button className="text-button" onClick={()=>navigateToTab("Update")}>Update →</button>
-</section>}
-      {!showGuide&&activeSection==="Plan"&&<nav className="section-tabs" aria-label="Plan sections">
-{[["Plan","Plan overview"],["Budget","Budget"],["Goals","Goals"],["Mortgage","Mortgage"],["Leakage","Insights"]].map(([target,label])=><button key={target} className={tab===target?"active":""} aria-current={tab===target?"page":undefined} onClick={()=>navigateToTab(target)}>{label}</button>)}
-</nav>}
+<button className="text-button" onClick={()=>navigateToTab("Update")}>Update data →</button>
+</div></details>}
+      {!showGuide&&["Goals","Mortgage","Leakage"].includes(tab)&&<button className="text-button context-back" onClick={()=>navigateToTab(tab==="Leakage"?"Transactions":"Budget")}>← Back to {tab==="Leakage"?"Activity":"Plan"}</button>}
       {!showGuide&&activeSection==="Settings"&&<nav className="section-tabs" aria-label="Settings sections">
-{[["Settings","Overview"],["Update","Data & backup"],["Accounts","Accounts"],["Income","Payroll & pension"],["Direct Debits","Direct Debits"]].map(([target,label])=><button key={target} className={tab===target?"active":""} aria-current={tab===target?"page":undefined} onClick={()=>navigateToTab(target)}>{label}</button>)}
+{[["Settings","Overview"],["Update","Data & imports"],["Backup","Backup & privacy"],["Accounts","Accounts"],["Income","Payroll & pension"],["Direct Debits","Regular payments"]].map(([target,label])=><button key={target} className={tab===target?"active":""} aria-current={tab===target?"page":undefined} onClick={()=>navigateToTab(target)}>{label}</button>)}
 </nav>}
       {notice&&<div className="notice" role="status">
 <span>{notice}</span></div>}
@@ -1114,16 +1094,16 @@ export default function Home() {
       {importError&&<div className="error-state" role="alert">
 <strong>Import needs attention</strong>
 <span>{importError}</span>
-<button onClick={()=>{setImportError("");navigateToTab("Update")}}>Review update options</button>
+<button onClick={()=>{setImportError("");if(tab==="Monthly Review")setReviewTask(reviewTask??"current");else navigateToTab("Update")}}>Review update options</button>
 </div>}
 
-      {!showGuide&&!emptyFreshView&&tab==="Monthly Review"&&<MonthlyReview {...monthlyReviewProps} store={displayStore} />}
-      {!showGuide&&!emptyFreshView&&activeSection==="Plan"&&<Plan {...planScreenProps} store={displayStore} goals={goals} />}
+      {!showGuide&&!emptyFreshView&&tab==="Monthly Review"&&<MonthlyReview {...monthlyReviewProps} store={displayStore} openReviewTask={task=>{reviewTaskOpener.current=document.activeElement instanceof HTMLElement?document.activeElement:null;setReviewTask(task)}} reviewTaskPanel={reviewTask?<Suspense fallback={<p role="status">Loading review workspace…</p>}><ReviewWorkspace {...reviewWorkspaceProps} key={`${reviewCycleKey}-${reviewTask}`} task={reviewTask} onClose={closeReviewTask} ukTaxEnabled={ukTaxEnabled}/></Suspense>:undefined}/>}
+      {!showGuide&&!emptyFreshView&&(activeSection==="Plan"||tab==="Leakage")&&<Plan {...planScreenProps} planningPeriod={planningPeriod} setPlanningPeriod={setPlanningPeriod} planningPeriodLabel={cycleLabel(planningPeriodKey,payday,salaryDates)} store={displayStore} goals={goals} openMonthlyReview={cycle=>{setReviewCycleSelection(cycle);setReviewTask(null);navigateToTab("Monthly Review")}}/>}
       {!showGuide&&ukTaxEnabled&&tab==="Tax"&&<Tax store={store} setStore={setStore} gbp={gbp}/>}
       {!showGuide&&activeSection==="Settings"&&<Settings {...settingsScreenProps} ukTaxEnabled={ukTaxEnabled} onToggleUkTax={toggleUkTax} onOpenSetup={()=>{setSetupEditStep("review");setSetupOpen(true)}} automaticBackup={{status:automaticBackupStatus,folder:automaticBackupFolder,savedAt:automaticBackupSavedAt,error:automaticBackupError}} enableAutomaticBackups={enableAutomaticBackups} reconnectAutomaticBackups={reconnectAutomaticBackups} disableAutomaticBackups={disableAutomaticBackups} saveAutomaticBackupNow={()=>writeRecoveryPoint(store,true)} />}
-      {!showGuide&&!emptyFreshView&&tab==="Overview"&&<HomeScreen {...homeScreenProps} categoryLabels={{review:categoryFor(store.profile,"Other")?.name??"Other",reviewSubcategory:categoryFor(store.profile,"Other")?.subcategories.find(item=>item.id==="category:other/subcategory:needs-review")?.name??"Needs review"}} goals={goals} />}
+      {!showGuide&&!emptyFreshView&&tab==="Overview"&&<HomeScreen {...homeScreenProps} resetAccountFilter={()=>setAccountFilter("All accounts")} categoryLabels={{review:categoryFor(store.profile,"Other")?.name??"Other",reviewSubcategory:categoryFor(store.profile,"Other")?.subcategories.find(item=>item.id==="category:other/subcategory:needs-review")?.name??"Needs review"}} goals={goals} />}
       {!showGuide&&!emptyFreshView&&tab==="Transactions"&&<TransactionsScreen {...transactionsScreenProps} />}
-      {mortgageImportDraft&&<div className="detail-backdrop" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)setMortgageImportDraft(null)}}><section className="import-preview-dialog mortgage-preview-dialog" role="dialog" aria-modal="true" aria-labelledby="mortgage-preview-title">
+      {mortgageImportDraft&&<Dialog className="import-preview-dialog mortgage-preview-dialog" labelledBy="mortgage-preview-title" onClose={()=>setMortgageImportDraft(null)}>
 <button className="detail-close" aria-label="Cancel mortgage statement import" onClick={()=>setMortgageImportDraft(null)}>×</button>
 <span className="insight-label">CHECK BEFORE UPDATING</span>
 <h2 id="mortgage-preview-title">{mortgageImportDraft.lender} statement</h2>
@@ -1140,10 +1120,9 @@ export default function Home() {
 {mortgageImportDraft.warnings.map(warning=><div className="import-warning" key={warning}>{warning}</div>)}
 <p className="privacy-note">Confirming updates the selected mortgage liability, the dated net-worth snapshot and—only for the main home—the overpayment planner balance.</p>
 <div className="dialog-actions"><button className="ghost" onClick={()=>setMortgageImportDraft(null)}>Cancel</button><button className="primary" disabled={mortgageImportDraft.duplicate} onClick={confirmMortgageStatement}>{mortgageImportDraft.duplicate?"Already imported":"Update mortgage"}</button></div>
-</section></div>}
+</Dialog>}
       {pendingImport&&<ImportPreview region={regional.region} pendingImport={pendingImport} onCancel={()=>setPendingImport(null)} onConfirm={confirmPendingImport}/>}
-      {detailKey&&<div className="detail-backdrop" role="presentation" onMouseDown={e=>{if(e.target===e.currentTarget)setDetailKey(null)}}>
-<aside className="detail-drawer" role="dialog" aria-modal="true" aria-label={detailMap[detailKey].eyebrow}>
+      {detailKey&&<Dialog className="detail-drawer" label={detailMap[detailKey].eyebrow} onClose={()=>setDetailKey(null)}>
 <button className="detail-close" aria-label="Close details" onClick={()=>setDetailKey(null)}>×</button>
 <span className="insight-label">{detailMap[detailKey].eyebrow}</span>
 <h2>{detailMap[detailKey].title}</h2>
@@ -1153,10 +1132,8 @@ export default function Home() {
 <span>
 <strong>{row.label}</strong>{row.note&&<small>{row.note}</small>}</span>
 <b>{row.value}</b>
-</div>)}</div>{detailKey==="pensions"&&<button className="primary detail-action" onClick={()=>{setDetailKey(null);navigateToTab("Income")}}>View income history</button>}{detailKey==="savings"&&<button className="primary detail-action" onClick={()=>{setDetailKey(null);setQuery("");setCategory(categoryFor(store.profile,"Savings")?.name??"Savings");setSubcategoryFilter("All subcategories");setPeriod(`cycle:${overviewCycleKey}`);setTxView("Savings");navigateToTab("Transactions")}}>View contributing transactions</button>}</aside>
-</div>}
-      {classificationDialog&&classificationTarget&&<div className="detail-backdrop classification-backdrop" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)setClassificationDialog(null)}}>
-<section className="classification-dialog" role="dialog" aria-modal="true" aria-labelledby="classification-dialog-title" aria-describedby="classification-dialog-description">
+</div>)}</div>{detailKey==="pensions"&&<button className="primary detail-action" onClick={()=>{setDetailKey(null);navigateToTab("Income")}}>View income history</button>}{detailKey==="savings"&&<button className="primary detail-action" onClick={()=>{setDetailKey(null);setQuery("");setCategory(categoryFor(store.profile,"Savings")?.name??"Savings");setSubcategoryFilter("All subcategories");setPeriod(`cycle:${overviewCycleKey}`);setTxView("Savings");navigateToTab("Transactions")}}>View contributing transactions</button>}</Dialog>}
+      {classificationDialog&&classificationTarget&&<Dialog className="classification-dialog" backdropClassName="detail-backdrop classification-backdrop" labelledBy="classification-dialog-title" describedBy="classification-dialog-description" onClose={()=>setClassificationDialog(null)}>
 <button className="detail-close" aria-label="Cancel category change" onClick={()=>setClassificationDialog(null)}>×</button>
 <span className="insight-label">CHOOSE THE REACH OF THIS CHANGE</span>
 <h2 id="classification-dialog-title">Update {classificationTarget.merchant}</h2>
@@ -1169,22 +1146,19 @@ export default function Home() {
 <button className="recommended" onClick={()=>commitMerchantClassification("all")}><span><b>Past and future</b><small>Updates every matching merchant transaction already loaded and all future imports.</small></span><strong>{classificationMerchantMatches.length} now + future</strong><i>Best for a consistently used merchant</i></button>
 </div>
 <button className="ghost classification-cancel" onClick={()=>setClassificationDialog(null)}>Cancel—keep the current category</button>
-</section>
-</div>}
-      {subcategoryDialog&&<div className="detail-backdrop" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)setSubcategoryDialog(null)}}>
-<section className="subcategory-dialog" role="dialog" aria-modal="true" aria-labelledby="subcategory-dialog-title">
+</Dialog>}
+      {subcategoryDialog&&<Dialog className="subcategory-dialog" labelledBy="subcategory-dialog-title" onClose={()=>setSubcategoryDialog(null)}>
 <button className="detail-close" aria-label="Close" onClick={()=>setSubcategoryDialog(null)}>×</button>
 <span className="insight-label">MORE GRANULAR REPORTING</span>
 <h2 id="subcategory-dialog-title">Add under {subcategoryDialog.category}</h2>
 <p>Create a reusable subcategory. If opened from a transaction, you will choose whether it applies once, going forward, or across past and future records.</p>
-<label>Subcategory name<input autoFocus placeholder="e.g. Your own label" value={newSubcategory} onChange={event=>setNewSubcategory(event.target.value)} onKeyDown={event=>{if(event.key==="Enter")createCustomSubcategory()}}/>
+<label>Subcategory name<input placeholder="e.g. Your own label" value={newSubcategory} onChange={event=>setNewSubcategory(event.target.value)} onKeyDown={event=>{if(event.key==="Enter")createCustomSubcategory()}}/>
 </label>
 <div>
 <button className="ghost" onClick={()=>setSubcategoryDialog(null)}>Cancel</button>
 <button className="primary" onClick={createCustomSubcategory}>Create subcategory</button>
 </div>
-</section>
-</div>}
+</Dialog>}
     </main>
   </div>
 }

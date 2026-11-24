@@ -1,25 +1,26 @@
 import type { CycleCloseout, ImportRecord, Store, Tx } from "./types.ts";
-import { isExcludedFromSpending, isPayYourselfFirstMovement, spendingTreatmentFor } from "./transactions.ts";
+import { isExcludedFromSpending, isPayYourselfFirstMovement, personalSpendingAmount, spendingTreatmentFor } from "./transactions.ts";
 
 export function spendingBreakdown(transactions: Tx[]) {
   const result = { recurring: 0, variable: 0, planned: 0, unplanned: 0, business: 0, excluded: 0, personal: 0 };
   for (const t of transactions) {
-    if (t.amount >= 0) continue;
     const amount = -t.amount;
-    if (spendingTreatmentFor(t) === "Reimbursable business") { result.business += amount; continue; }
-    if (isExcludedFromSpending(t)) { result.excluded += amount; continue; }
+    if (spendingTreatmentFor(t) === "Reimbursable business") { if (t.amount < 0) result.business += amount; continue; }
+    if (isExcludedFromSpending(t)) { if (t.amount < 0) result.excluded += amount; continue; }
+    const personalAmount = personalSpendingAmount(t);
+    if (personalAmount === 0) continue;
     const treatment = spendingTreatmentFor(t);
-    result.personal += amount;
-    if (treatment === "Recurring") result.recurring += amount;
-    else if (treatment === "Planned one-off") result.planned += amount;
-    else if (treatment === "Unplanned one-off") result.unplanned += amount;
-    else result.variable += amount;
+    result.personal += personalAmount;
+    if (treatment === "Recurring") result.recurring += personalAmount;
+    else if (treatment === "Planned one-off") result.planned += personalAmount;
+    else if (treatment === "Unplanned one-off") result.unplanned += personalAmount;
+    else result.variable += personalAmount;
   }
   return Object.fromEntries(Object.entries(result).map(([k,v]) => [k, Math.round(v*100)/100])) as typeof result;
 }
 
 export function closeoutHasChanged(saved: CycleCloseout | undefined, income: number, spend: number, savedAmount: number) {
-  return Boolean(saved && (Math.abs(saved.income-income) > .01 || Math.abs(saved.personalSpend+saved.rentalMortgage-spend) > .01 || Math.abs((saved.payYourselfFirst ?? 0)-savedAmount) > .01));
+  return Boolean(saved && (Math.abs(saved.income-income) > .01 || Math.abs(saved.personalSpend+saved.rentalMortgage+(saved.rentalOperatingSpend??0)-spend) > .01 || Math.abs((saved.payYourselfFirst ?? 0)-savedAmount) > .01));
 }
 
 export function reviewReadiness(input: { coverageComplete: boolean; missingAccounts?: string[]; payslipRecorded: boolean; unreviewed: number }) {

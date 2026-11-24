@@ -25,6 +25,23 @@ export function latestPayslipRecord(payslips: PayslipRecord[]) {
   return [...payslips].sort((a, b) => b.payDate.localeCompare(a.payDate))[0];
 }
 
+function employerNameKey(name: string) {
+  return name.normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+}
+
+export function payslipMatchesEmployer(payslip: PayslipRecord, employer: string) {
+  const recorded = employerNameKey(payslip.employer ?? "");
+  const expected = employerNameKey(employer);
+  return Boolean(recorded && expected && (recorded.includes(expected) || expected.includes(recorded)));
+}
+
+/** A saved payslip can establish the active employer when older profiles have no payroll rule. */
+export function activePayrollEmployer(payslips: PayslipRecord[], configuredEmployer?: string) {
+  const configured = configuredEmployer?.trim();
+  if (configured) return configured;
+  return latestPayslipRecord(payslips.filter(payslip => payslip.employer?.trim() && payslip.employer !== "Unknown employer"))?.employer ?? "";
+}
+
 /** One chart point per calendar payroll month, while preserving every source payslip. */
 export function groupPayslipsByMonth(payslips: PayslipRecord[]): PayrollMonth[] {
   const months = payslips.reduce<Record<string, PayrollMonth>>((result, payslip) => {
