@@ -410,8 +410,8 @@ export default function Home() {
   const rentalIncomeTransaction=(transaction:Tx)=>isRentalIncome(transaction,incomeSources);
   const salaryDates=useMemo(()=>{
     const anchors=[
-      ...(store.payslips??[]).map(payslip=>({date:payslip.payDate,employer:payslip.employer})),
-      ...resolvedTransactions.filter(salaryTransaction).map(transaction=>({date:transaction.date,employer:transaction.merchant})),
+      ...(store.payslips??[]).map(payslip=>({date:payslip.payDate,employer:payslip.employer,source:'payslip' as const})),
+      ...resolvedTransactions.filter(salaryTransaction).map(transaction=>({date:transaction.date,employer:transaction.merchant,source:'transaction' as const})),
     ];
     const furthestKnown=[...anchors.map(anchor=>anchor.date.slice(0,7)),new Date().toISOString().slice(0,7)].sort().at(-1)??new Date().toISOString().slice(0,7);
     return payCycleAnchorDates(anchors,paydayRules,payday,nextMonthKey(furthestKnown));

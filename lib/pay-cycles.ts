@@ -3,7 +3,7 @@ import { transactionRole } from "./transaction-roles.ts";
 
 export type SalaryDateMap = Record<string, string>;
 export type PaydayRule = { effectiveFrom: string; payday: number; employer?: string; strictStart?: boolean };
-export type PayCycleAnchor = { date: string; employer?: string };
+export type PayCycleAnchor = { date: string; employer?: string; source?: 'transaction' | 'payslip' };
 
 export function previousMonthKey(key: string) { const [year, month] = key.split("-").map(Number); const date = new Date(year, month - 2, 1, 12); return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`; }
 export function nextMonthKey(key: string) { const [year, month] = key.split("-").map(Number); const date = new Date(year, month, 1, 12); return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`; }
@@ -43,6 +43,7 @@ function matchesEmployer(actual: string, expected: string) {
  */
 export function payCycleAnchorDates(records: PayCycleAnchor[], rules: PaydayRule[], fallbackPayday = 26, throughKey?: string) {
   const dates:SalaryDateMap={};
+  const priorities:Record<string,number>={};
   for(const record of records){
     if(!/^\d{4}-\d{2}-\d{2}$/.test(record.date))continue;
     const key=record.date.slice(0,7);
@@ -52,7 +53,15 @@ export function payCycleAnchorDates(records: PayCycleAnchor[], rules: PaydayRule
     // that case a one-off early transition payment is income in the prior
     // cycle, rather than redefining the schedule for all future reporting.
     if(activeRule?.strictStart&&record.date<expectedPayDate(key,activeRule.payday))continue;
-    if(!dates[key]||record.date>dates[key])dates[key]=record.date;
+    // A posted salary is stronger evidence than the nominal date printed on
+    // its payslip. Keep one shared boundary for all transactions and screens.
+    const priority=record.source==='transaction'?2:record.source==='payslip'?0:1;
+    const configuredDay=activeRule?.payday??fallbackPayday;
+    const date=record.source==='payslip'&&Number(record.date.slice(-2))===configuredDay
+      ?expectedPayDate(key,configuredDay):record.date;
+    if(!dates[key]||priority>(priorities[key]??-1)||priority===priorities[key]&&date>dates[key]){
+      dates[key]=date;priorities[key]=priority;
+    }
   }
   return applyPaydayRules(dates,rules,fallbackPayday,throughKey);
 }
